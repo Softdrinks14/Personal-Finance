@@ -1,0 +1,21 @@
+# Dependency & build output
+node_modules/
+.next/
+out/
+build/
+dist/
+
+# Environment (JANGAN pernah di-commit, isinya kunci rahasia)
+.env
+.env.local
+.env*.local
+
+# Log & OS
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.DS_Store
+Thumbs.db
+*.tsbuildinfo
+next-env.d.ts
+.vercel
