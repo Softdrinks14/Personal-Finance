@@ -2,10 +2,9 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Cloud, HardDrive, LayoutDashboard, ScanLine, Wallet } from 'lucide-react';
-import { useData } from '@/components/data-provider';
+import { LayoutDashboard, ScanLine, Wallet } from 'lucide-react';
 import { ThemeToggle } from '@/components/layout/theme-toggle';
-import { Badge } from '@/components/ui/badge';
+import { UserMenu } from '@/components/user-menu';
 import { cn } from '@/lib/utils';
 
 const NAV_ITEMS = [
@@ -16,13 +15,12 @@ const NAV_ITEMS = [
 
 export function Navbar() {
   const pathname = usePathname();
-  const { mode, modeLabel } = useData();
 
   return (
     <header className="sticky top-0 z-40 border-b border-border bg-background/85 backdrop-blur">
-      <div className="container flex h-16 items-center justify-between gap-4">
+      <div className="container flex h-16 items-center justify-between gap-3">
         {/* Logo */}
-        <Link href="/" className="flex items-center gap-2.5">
+        <Link href="/" className="flex shrink-0 items-center gap-2.5">
           <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-primary-foreground">
             <Wallet className="h-5 w-5" />
           </span>
@@ -41,6 +39,7 @@ export function Navbar() {
               <Link
                 key={item.href}
                 href={item.href}
+                aria-current={isActive ? 'page' : undefined}
                 className={cn(
                   'flex items-center gap-2 whitespace-nowrap rounded-md px-3 py-2 text-sm font-medium transition-colors',
                   isActive
@@ -55,12 +54,9 @@ export function Navbar() {
           })}
         </nav>
 
-        {/* Status penyimpanan + tombol tema */}
-        <div className="flex items-center gap-2">
-          <Badge tone={mode === 'supabase' ? 'income' : 'warning'} title={modeLabel}>
-            {mode === 'supabase' ? <Cloud className="h-3 w-3" /> : <HardDrive className="h-3 w-3" />}
-            <span className="hidden sm:inline">{mode === 'supabase' ? 'Supabase' : 'Local'}</span>
-          </Badge>
+        {/* Email pengguna + tombol keluar + ganti tema */}
+        <div className="flex shrink-0 items-center gap-1.5">
+          <UserMenu />
           <ThemeToggle />
         </div>
       </div>

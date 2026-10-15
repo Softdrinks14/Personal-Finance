@@ -7,7 +7,18 @@ export const Card = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDi
   ({ className, ...props }, ref) => (
     <div
       ref={ref}
-      className={cn('rounded-lg border border-border bg-card text-card-foreground shadow-soft', className)}
+      className={cn(
+        // min-w-0 itu penting, bukan hiasan:
+        // Kalau Card dipakai sebagai anak grid/flex, browser secara default
+        // memberi `min-width: auto` yang artinya "jangan menyusut di bawah
+        // lebar minimum isinya". Untuk tabel yang selnya `whitespace-nowrap`,
+        // lebar minimum itu bisa lebih besar dari layar HP — akibatnya kartu
+        // memaksa kolom grid jadi lebih lebar dan garisnya keluar dari layar.
+        // Dengan min-width: 0, kartu mau menyusut dan tabelnya yang menggeser
+        // (scroll) di dalam kotaknya sendiri.
+        'min-w-0 rounded-lg border border-border bg-card text-card-foreground shadow-soft',
+        className,
+      )}
       {...props}
     />
   ),

@@ -1,36 +1,35 @@
 import { NextResponse } from 'next/server';
-import { getSupabase, SUPABASE_SETUP_HINT } from '@/lib/supabase';
+import { requireApiUser } from '@/lib/api-guard';
 import type { TxType } from '@/lib/types';
 
 /**
  * API ROUTE: /api/transactions
  * ------------------------------------------------------------------
- * GET  /api/transactions            -> daftar semua transaksi
+ * GET  /api/transactions            -> daftar transaksi MILIK SAYA
  * GET  /api/transactions?month=2026-10&type=expense
- * POST /api/transactions            -> simpan transaksi baru
+ * POST /api/transactions            -> simpan transaksi baru milik saya
  *
- * Catatan: halaman-halaman di aplikasi ini memakai `lib/storage.ts`
- * (langsung ke Supabase dari browser) supaya mode LocalStorage tetap
- * bisa jalan. Endpoint ini disediakan untuk integrasi lain, misalnya
- * script otomasi, Google Sheets, atau bot Telegram.
+ * Hanya mengembalikan data milik pengguna yang sedang login. Ini dijamin
+ * oleh dua hal sekaligus:
+ *   1. filter `.eq('user_id', user.id)` di bawah
+ *   2. Row Level Security di database (`auth.uid() = user_id`)
  */
 
 export const dynamic = 'force-dynamic';
 
-const SETUP_RESPONSE = {
-  error: 'Supabase belum dikonfigurasi.',
-  hint: SUPABASE_SETUP_HINT,
-};
-
 export async function GET(request: Request) {
-  const client = getSupabase();
-  if (!client) return NextResponse.json(SETUP_RESPONSE, { status: 503 });
+  const { user, supabase, error } = await requireApiUser();
+  if (error) return error;
 
   const { searchParams } = new URL(request.url);
   const month = searchParams.get('month');
   const type = searchParams.get('type');
 
-  let query = client.from('transactions').select('*').order('date', { ascending: false });
+  let query = supabase!
+    .from('transactions')
+    .select('*')
+    .eq('user_id', user!.id)
+    .order('date', { ascending: false });
 
   if (type === 'income' || type === 'expense') {
     query = query.eq('type', type);
@@ -40,9 +39,9 @@ export async function GET(request: Request) {
     query = query.gte('date', `${month}-01`).lte('date', `${month}-31`);
   }
 
-  const { data, error } = await query;
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  const { data, error: queryError } = await query;
+  if (queryError) {
+    return NextResponse.json({ error: queryError.message }, { status: 500 });
   }
 
   return NextResponse.json({
@@ -56,8 +55,8 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const client = getSupabase();
-  if (!client) return NextResponse.json(SETUP_RESPONSE, { status: 503 });
+  const { user, supabase, error } = await requireApiUser();
+  if (error) return error;
 
   let body: any;
   try {
@@ -80,9 +79,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Field 'date' harus format YYYY-MM-DD." }, { status: 400 });
   }
 
-  const { data, error } = await client
+  const { data, error: insertError } = await supabase!
     .from('transactions')
     .insert({
+      // Dipaksa milik pengguna yang login — tidak bisa ditentukan dari body.
+      user_id: user!.id,
       type,
       amount,
       date,
@@ -93,8 +94,8 @@ export async function POST(request: Request) {
     .select()
     .single();
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  if (insertError) {
+    return NextResponse.json({ error: insertError.message }, { status: 500 });
   }
 
   return NextResponse.json({ data }, { status: 201 });

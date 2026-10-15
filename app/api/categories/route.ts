@@ -1,32 +1,33 @@
 import { NextResponse } from 'next/server';
-import { getSupabase, SUPABASE_SETUP_HINT } from '@/lib/supabase';
+import { requireApiUser } from '@/lib/api-guard';
 
 /**
  * API ROUTE: /api/categories
  * ------------------------------------------------------------------
- * GET  /api/categories  -> daftar kategori
- * POST /api/categories  -> tambah kategori baru
+ * GET  /api/categories  -> daftar kategori MILIK SAYA
+ * POST /api/categories  -> tambah kategori baru milik saya
  */
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
-  const client = getSupabase();
-  if (!client) {
-    return NextResponse.json({ error: 'Supabase belum dikonfigurasi.', hint: SUPABASE_SETUP_HINT }, { status: 503 });
-  }
+  const { user, supabase, error } = await requireApiUser();
+  if (error) return error;
 
-  const { data, error } = await client.from('categories').select('*').order('name');
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  const { data, error: queryError } = await supabase!
+    .from('categories')
+    .select('*')
+    .eq('user_id', user!.id)
+    .order('name');
+
+  if (queryError) return NextResponse.json({ error: queryError.message }, { status: 500 });
 
   return NextResponse.json({ data: data ?? [], count: data?.length ?? 0 });
 }
 
 export async function POST(request: Request) {
-  const client = getSupabase();
-  if (!client) {
-    return NextResponse.json({ error: 'Supabase belum dikonfigurasi.', hint: SUPABASE_SETUP_HINT }, { status: 503 });
-  }
+  const { user, supabase, error } = await requireApiUser();
+  if (error) return error;
 
   let body: any;
   try {
@@ -46,13 +47,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Field 'type' harus 'income', 'expense', atau 'both'." }, { status: 400 });
   }
 
-  const { data, error } = await client
+  const { data, error: insertError } = await supabase!
     .from('categories')
-    .insert({ name, type, color })
+    .insert({ user_id: user!.id, name, type, color })
     .select()
     .single();
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (insertError) return NextResponse.json({ error: insertError.message }, { status: 500 });
 
   return NextResponse.json({ data }, { status: 201 });
 }

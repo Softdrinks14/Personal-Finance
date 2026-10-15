@@ -1,11 +1,23 @@
-import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { createBrowserClient } from '@supabase/ssr';
+import type { SupabaseClient } from '@supabase/supabase-js';
 
 /**
- * Koneksi Supabase.
+ * Koneksi Supabase untuk SISI BROWSER.
  *
  * Analogi: file ini seperti "nomor telepon + kunci gudang" ke database Supabase.
- * Kalau dua-duanya belum diisi di `.env.local`, aplikasi otomatis berpindah
- * ke mode LocalStorage (gudang kecil di dalam browser) supaya tetap bisa dipakai.
+ *
+ * PENTING — kenapa memakai `createBrowserClient` dari @supabase/ssr, bukan
+ * `createClient` biasa:
+ *
+ *   Sesi login disimpan di COOKIE, bukan di localStorage. Cookie ikut terkirim
+ *   ke server pada setiap request, sehingga:
+ *     - middleware.ts bisa memeriksa "sudah login atau belum" SEBELUM halaman
+ *       sempat dirender (itulah yang membuat proteksi rute benar-benar aman);
+ *     - server bisa membaca identitas pengguna dan meneruskannya ke PostgreSQL,
+ *       sehingga Row Level Security (auth.uid() = user_id) bekerja.
+ *
+ *   Kalau sesi disimpan di localStorage, server tidak melihatnya sama sekali
+ *   dan proteksi rute hanya jadi hiasan.
  */
 
 /**
@@ -28,8 +40,8 @@ export function normalizeSupabaseUrl(raw: string): string {
     .replace(/\/+$/, '');
 }
 
-const SUPABASE_URL = normalizeSupabaseUrl(process.env.NEXT_PUBLIC_SUPABASE_URL ?? '');
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '';
+export const SUPABASE_URL = normalizeSupabaseUrl(process.env.NEXT_PUBLIC_SUPABASE_URL ?? '');
+export const SUPABASE_ANON_KEY = (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '').trim();
 
 /**
  * Bernilai true kalau URL & anon key sudah diisi dengan format yang masuk akal.
@@ -42,19 +54,16 @@ export const isSupabaseConfigured: boolean =
 let cachedClient: SupabaseClient | null = null;
 
 /**
- * Ambil instance Supabase client.
- * Mengembalikan `null` kalau environment belum diisi (mode LocalStorage).
+ * Ambil instance Supabase client (browser).
+ * Mengembalikan `null` kalau environment belum diisi, atau kalau dipanggil
+ * dari sisi server (di server pakai lib/supabase/server.ts).
  */
 export function getSupabase(): SupabaseClient | null {
   if (!isSupabaseConfigured) return null;
+  if (typeof window === 'undefined') return null;
 
   if (!cachedClient) {
-    cachedClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-      auth: {
-        // Aplikasi ini belum memakai login, jadi kita tidak perlu menyimpan sesi.
-        persistSession: false,
-        autoRefreshToken: false,
-      },
+    cachedClient = createBrowserClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
       global: {
         headers: { 'x-application-name': 'personal-finance-tracker' },
       },
@@ -68,9 +77,7 @@ export function getSupabase(): SupabaseClient | null {
 export function requireSupabase(): SupabaseClient {
   const client = getSupabase();
   if (!client) {
-    throw new Error(
-      'Supabase belum dikonfigurasi. Isi NEXT_PUBLIC_SUPABASE_URL dan NEXT_PUBLIC_SUPABASE_ANON_KEY di file .env.local',
-    );
+    throw new Error(SUPABASE_SETUP_HINT);
   }
   return client;
 }

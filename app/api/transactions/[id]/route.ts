@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getSupabase, SUPABASE_SETUP_HINT } from '@/lib/supabase';
+import { requireApiUser } from '@/lib/api-guard';
 
 /**
  * API ROUTE: /api/transactions/[id]
@@ -7,17 +7,17 @@ import { getSupabase, SUPABASE_SETUP_HINT } from '@/lib/supabase';
  * PATCH  /api/transactions/<id>  -> perbarui sebagian field
  * DELETE /api/transactions/<id>  -> hapus satu transaksi
  *
- * Catatan Next.js 15+: `params` sekarang berupa Promise, jadi harus
- * di-await sebelum dipakai.
+ * Keduanya menambahkan `.eq('user_id', user.id)`, jadi walaupun seseorang
+ * menebak id transaksi orang lain, yang terpengaruh tetap nol baris.
+ *
+ * Catatan Next.js 15+: `params` berupa Promise, jadi harus di-await.
  */
 
 export const dynamic = 'force-dynamic';
 
 export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
-  const client = getSupabase();
-  if (!client) {
-    return NextResponse.json({ error: 'Supabase belum dikonfigurasi.', hint: SUPABASE_SETUP_HINT }, { status: 503 });
-  }
+  const { user, supabase, error } = await requireApiUser();
+  if (error) return error;
 
   const { id } = await context.params;
 
@@ -59,28 +59,39 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     return NextResponse.json({ error: 'Tidak ada field yang bisa diperbarui.' }, { status: 400 });
   }
 
-  const { data, error } = await client
+  const { data, error: updateError } = await supabase!
     .from('transactions')
     .update(patch)
     .eq('id', id)
+    .eq('user_id', user!.id)
     .select()
     .single();
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (updateError) return NextResponse.json({ error: updateError.message }, { status: 500 });
+  if (!data) {
+    return NextResponse.json({ error: 'Transaksi tidak ditemukan.' }, { status: 404 });
+  }
 
   return NextResponse.json({ data });
 }
 
 export async function DELETE(_request: Request, context: { params: Promise<{ id: string }> }) {
-  const client = getSupabase();
-  if (!client) {
-    return NextResponse.json({ error: 'Supabase belum dikonfigurasi.', hint: SUPABASE_SETUP_HINT }, { status: 503 });
-  }
+  const { user, supabase, error } = await requireApiUser();
+  if (error) return error;
 
   const { id } = await context.params;
 
-  const { error } = await client.from('transactions').delete().eq('id', id);
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  const { data, error: deleteError } = await supabase!
+    .from('transactions')
+    .delete()
+    .eq('id', id)
+    .eq('user_id', user!.id)
+    .select();
+
+  if (deleteError) return NextResponse.json({ error: deleteError.message }, { status: 500 });
+  if (!data || data.length === 0) {
+    return NextResponse.json({ error: 'Transaksi tidak ditemukan.' }, { status: 404 });
+  }
 
   return NextResponse.json({ success: true, id });
 }

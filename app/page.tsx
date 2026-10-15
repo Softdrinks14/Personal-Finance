@@ -6,7 +6,7 @@ import { ArrowRight, Plus, RefreshCw, Sparkles, Trash2 } from 'lucide-react';
 import { CategoryDonutChart } from '@/components/charts/category-donut-chart';
 import { MonthlyBarChart } from '@/components/charts/monthly-bar-chart';
 import { useData } from '@/components/data-provider';
-import { DataModeBanner } from '@/components/data-mode-banner';
+import { SupabaseSetupNotice } from '@/components/supabase-setup-notice';
 import { AppShell } from '@/components/layout/app-shell';
 import { SummaryCards } from '@/components/summary-cards';
 import { TransactionForm } from '@/components/transaction-form';
@@ -101,7 +101,7 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        <DataModeBanner />
+        <SupabaseSetupNotice />
 
         {/* 1. Kartu ringkasan */}
         <SummaryCards summary={summary} periodLabel={periodLabel} />

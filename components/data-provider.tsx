@@ -1,12 +1,11 @@
 'use client';
 
 import * as React from 'react';
+import { useAuth } from '@/components/auth-provider';
 import { useToast } from '@/components/ui/toast';
 import {
-  DATA_MODE_LABEL,
   createTransaction,
   createTransactions,
-  dataMode,
   deleteAllTransactions,
   deleteTransaction,
   listCategories,
@@ -14,20 +13,32 @@ import {
   seedDemoTransactions,
   updateTransaction,
 } from '@/lib/storage';
-import type { Category, DataMode, Transaction, TransactionInput } from '@/lib/types';
+import type { Category, Transaction, TransactionInput } from '@/lib/types';
 
-/**
- * DataProvider = "gudang data" versi React.
+/* =========================================================================
+ * DATA PROVIDER
+ * -------------------------------------------------------------------------
+ * "Gudang data" versi React: mengambil data sekali, lalu membagikannya ke
+ * semua halaman.
  *
- * Analogi: daripada setiap halaman bolak-balik menelepon bank data
- * (yang bikin lambat), kita ambil sekali di sini lalu bagikan ke semua
- * komponen yang butuh. Setiap kali data berubah, semua ikut ter-update.
- */
+ * ⚠️ URUTAN ITU PENTING — inilah sumber error "Gagal memuat data":
+ *
+ *   DataProvider hidup di layout root, jadi ia TERPASANG JUGA saat pengguna
+ *   masih berada di halaman /login (belum punya sesi). Kalau ia langsung
+ *   mengambil data, permintaannya ditolak ("Sesi login tidak ditemukan") dan
+ *   muncul toast "Gagal memuat data" yang membingungkan.
+ *
+ *   Karena itu komponen ini:
+ *     1. MENUNGGU sampai status login diketahui (`loading` dari AuthProvider),
+ *     2. hanya memuat kalau ada pengguna yang login,
+ *     3. memuat ULANG otomatis begitu pengguna berubah (login / ganti akun /
+ *        logout) — sebelumnya data tidak pernah dimuat ulang setelah login.
+ *
+ * Semua fungsi di lib/storage.ts sudah otomatis hanya mengambil data MILIK
+ * pengguna yang sedang login.
+ * ========================================================================= */
 
 interface DataContextValue {
-  /** 'supabase' atau 'local' */
-  mode: DataMode;
-  modeLabel: string;
   loading: boolean;
   error: string | null;
   transactions: Transaction[];
@@ -45,35 +56,67 @@ interface DataContextValue {
 
 const DataContext = React.createContext<DataContextValue | null>(null);
 
+/**
+ * Ubah error teknis database menjadi kalimat yang bisa ditindaklanjuti.
+ * Khususnya: kalau migrasi multi-user belum dijalankan, pesannya jadi jelas.
+ */
+function explainError(message: string): string {
+  const text = message.toLowerCase();
+
+  if (text.includes('user_id') && (text.includes('does not exist') || text.includes('column'))) {
+    return `${message} — Jalankan "supabase/schema.sql" (atau migrasi 002) di SQL Editor Supabase agar kolom user_id ada.`;
+  }
+  if (text.includes('permission denied') || text.includes('row-level security')) {
+    return `${message} — Kebijakan RLS belum lengkap. Jalankan seluruh isi "supabase/schema.sql" di SQL Editor Supabase.`;
+  }
+  if (text.includes('sesi login tidak ditemukan')) {
+    return `${message} Coba muat ulang halaman (F5).`;
+  }
+
+  return message;
+}
+
 export function DataProvider({ children }: { children: React.ReactNode }) {
   const { toast } = useToast();
+  const { user, loading: authLoading } = useAuth();
 
   const [transactions, setTransactions] = React.useState<Transaction[]>([]);
   const [categories, setCategories] = React.useState<Category[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
-  const [mode, setMode] = React.useState<DataMode>('local');
 
   const refresh = React.useCallback(async () => {
+    // Belum login -> tidak ada yang perlu dimuat, dan JANGAN tampilkan error.
+    if (!user) {
+      setTransactions([]);
+      setCategories([]);
+      setError(null);
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     setError(null);
     try {
-      setMode(dataMode());
       const [cats, txs] = await Promise.all([listCategories(), listTransactions()]);
       setCategories(cats);
       setTransactions(txs);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Terjadi kesalahan tidak dikenal.';
       setError(message);
-      toast({ title: 'Gagal memuat data', description: message, tone: 'error' });
+      toast({ title: 'Gagal memuat data', description: explainError(message), tone: 'error' });
     } finally {
       setLoading(false);
     }
-  }, [toast]);
+  }, [toast, user]);
 
   React.useEffect(() => {
+    // Tunggu sampai AuthProvider tahu siapa yang login.
+    if (authLoading) return;
     void refresh();
-  }, [refresh]);
+    // refresh berubah ketika `user` berubah, sehingga data otomatis dimuat
+    // ulang setelah login dan dibersihkan setelah logout.
+  }, [authLoading, refresh]);
 
   const addTransaction = React.useCallback(
     async (input: TransactionInput) => {
@@ -83,7 +126,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         toast({ title: 'Transaksi tersimpan', tone: 'success' });
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Gagal menyimpan.';
-        toast({ title: 'Gagal menyimpan transaksi', description: message, tone: 'error' });
+        toast({ title: 'Gagal menyimpan transaksi', description: explainError(message), tone: 'error' });
         throw err;
       }
     },
@@ -104,7 +147,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         return created.length;
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Gagal menyimpan.';
-        toast({ title: 'Gagal menyimpan hasil scan', description: message, tone: 'error' });
+        toast({ title: 'Gagal menyimpan hasil scan', description: explainError(message), tone: 'error' });
         throw err;
       }
     },
@@ -119,7 +162,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         toast({ title: 'Perubahan disimpan', tone: 'success' });
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Gagal memperbarui.';
-        toast({ title: 'Gagal memperbarui transaksi', description: message, tone: 'error' });
+        toast({ title: 'Gagal memperbarui transaksi', description: explainError(message), tone: 'error' });
         throw err;
       }
     },
@@ -134,7 +177,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         toast({ title: 'Transaksi dihapus', tone: 'success' });
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Gagal menghapus.';
-        toast({ title: 'Gagal menghapus transaksi', description: message, tone: 'error' });
+        toast({ title: 'Gagal menghapus transaksi', description: explainError(message), tone: 'error' });
         throw err;
       }
     },
@@ -145,10 +188,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     try {
       await deleteAllTransactions();
       await refresh();
-      toast({ title: 'Semua transaksi dihapus', tone: 'success' });
+      toast({ title: 'Semua transaksimu dihapus', tone: 'success' });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Gagal menghapus data.';
-      toast({ title: 'Gagal mereset data', description: message, tone: 'error' });
+      toast({ title: 'Gagal mereset data', description: explainError(message), tone: 'error' });
     }
   }, [refresh, toast]);
 
@@ -163,7 +206,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Gagal membuat data contoh.';
-      toast({ title: 'Gagal membuat data contoh', description: message, tone: 'error' });
+      toast({ title: 'Gagal membuat data contoh', description: explainError(message), tone: 'error' });
     }
   }, [refresh, toast]);
 
@@ -174,8 +217,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
   const value = React.useMemo<DataContextValue>(
     () => ({
-      mode,
-      modeLabel: DATA_MODE_LABEL[mode],
       loading,
       error,
       transactions,
@@ -190,7 +231,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       loadDemoData,
     }),
     [
-      mode,
       loading,
       error,
       transactions,

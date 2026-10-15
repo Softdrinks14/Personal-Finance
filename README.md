@@ -8,7 +8,16 @@ Dibuat untuk pemula: semua penjelasan pakai bahasa Indonesia, dan aplikasi **lan
 
 ## ✨ Fitur
 
-### 1. Dashboard & Analitik Visual (`/`)
+### 1. Autentikasi Multi-User & Isolasi Data (`/login`, `/register`)
+- **Daftar akun (Sign Up)** dengan **username & password** — tanpa email, tanpa verifikasi apa pun.
+- **Masuk (Login)** memakai username, plus **pemeriksaan ketersediaan username** saat mendaftar (muncul tanda hijau "masih tersedia" atau merah "sudah dipakai" sebelum kamu menekan Daftar).
+- **Tombol Logout** di navbar, lengkap dengan dialog konfirmasi.
+- **Proteksi rute**: halaman dashboard, riwayat, dan upload tidak bisa dibuka sebelum login — otomatis dialihkan ke `/login`, dan setelah berhasil masuk dikembalikan ke halaman yang tadi dituju.
+- **Data terpisah penuh antar pengguna.** Setiap baris transaksi & kategori punya kolom `user_id`. Pemisahannya ditegakkan oleh **Row Level Security** di PostgreSQL (`auth.uid() = user_id`), jadi tidak bisa dilewati dari sisi browser.
+- **Kategori per pengguna**: setiap akun baru otomatis mendapat 12 kategori bawaannya sendiri, dibuat oleh trigger database saat pendaftaran.
+- **Sesi berbasis cookie** (lewat `@supabase/ssr`), sehingga server bisa memeriksa identitas pengguna sebelum halaman dirender.
+
+### 2. Dashboard & Analitik Visual (`/`)
 - Tiga kartu ringkasan: **Total Pemasukan**, **Total Pengeluaran**, **Saldo Bersih** bulan ini — lengkap dengan perbandingan persen vs bulan lalu.
 - **Grafik batang**: pemasukan vs pengeluaran 6 bulan terakhir.
 - **Diagram donat**: pembagian per kategori (bisa diganti antara "Keluar" dan "Masuk").
@@ -16,12 +25,12 @@ Dibuat untuk pemula: semua penjelasan pakai bahasa Indonesia, dan aplikasi **lan
 - **Form tambah cepat** di sisi kanan.
 - Tombol **"Isi data contoh"** untuk mengisi 6 bulan data dummy supaya grafik langsung terlihat.
 
-### 2. Input Manual (`/` dan `/transactions`)
+### 3. Input Manual (`/` dan `/transactions`)
 - Form dengan jenis (Pemasukan/Pengeluaran), nominal, tanggal, kategori, dan catatan.
 - **Format rupiah otomatis**: ketik `1500000` → langsung jadi `1.500.000`.
 - Validasi input (nominal wajib > 0, tanggal wajib diisi, batas maksimal nominal).
 
-### 3. Input Otomatis via Screenshot Bank / OCR (`/upload`)
+### 4. Input Otomatis via Screenshot Bank / OCR (`/upload`)
 - **Drag & drop** screenshot (bisa beberapa file sekaligus, PNG/JPG/WEBP, maks. 10 MB).
 - **Tesseract.js** membaca teks **langsung di browser** — gratis, tanpa API key, gambar tidak dikirim ke server mana pun.
 - **Parser pintar** yang mengenali:
@@ -33,17 +42,17 @@ Dibuat untuk pemula: semua penjelasan pakai bahasa Indonesia, dan aplikasi **lan
 - **Tabel review**: setiap kolom bisa diedit, ada indikator keyakinan (Tinggi/Sedang/Rendah) dan baris teks asli OCR sebagai pembanding. **Tidak ada yang otomatis tersimpan** — kamu yang memutuskan.
 - Kategori ditebak otomatis dari kata kunci (mis. "GRABFOOD" → Makanan & Minuman, "TOKEN LISTRIK" → Tagihan & Utilitas).
 
-### 4. Riwayat & Laporan (`/transactions`)
+### 5. Riwayat & Laporan (`/transactions`)
 - Tabel lengkap dengan **pencarian** (keterangan, kategori, nominal, tanggal, sumber).
 - **Filter** jenis, bulan, dan kategori — plus kartu total dari hasil filter.
 - **Edit** dan **hapus** (dengan dialog konfirmasi).
 - **Export CSV** — siap dibuka di Excel/Google Sheets (sudah pakai BOM + baris total).
 
-### 5. Lain-lain
+### 6. Lain-lain
 - 🌙 **Mode gelap / terang** (tersimpan di localStorage, tanpa kedipan saat reload).
 - 📱 **Responsif** — tabel bisa di-scroll horizontal di HP.
 - 🔔 **Notifikasi toast** untuk setiap aksi.
-- 🏷️ Badge status di navbar: **Supabase** (cloud) atau **Local** (browser).
+- 🏷️ Email pengguna yang sedang login tampil di navbar, di samping tombol keluar.
 
 ---
 
@@ -74,9 +83,12 @@ Kalau belum ada, unduh di <https://nodejs.org> (pilih versi LTS).
 
 ---
 
-## 🚀 Langkah 1 — Menjalankan Aplikasi (Mode LocalStorage)
+## 🚀 Langkah 1 — Install & Menjalankan Aplikasi
 
-Cara tercepat mencoba. **Belum perlu Supabase, belum perlu daftar apa pun.**
+> ⚠️ **Penting: sejak fitur login ditambahkan, Supabase WAJIB diisi.**
+> Login memerlukan tempat menyimpan akun, dan setiap data keuangan harus punya
+> pemilik. Mode LocalStorage sudah dihapus. Jadi **kerjakan Langkah 2 dulu**,
+> baru aplikasinya bisa benar-benar dipakai.
 
 ```bash
 # 1. Masuk ke folder proyek
@@ -89,16 +101,9 @@ npm install
 npm run dev
 ```
 
-Buka <http://localhost:3000> di browser.
+Buka alamat yang tertulis di terminal (biasanya <http://localhost:3000>; kalau port itu sedang dipakai aplikasi lain, Next.js otomatis memakai port berikutnya dan menampilkannya di terminal).
 
-Kamu akan melihat badge **"Local"** di kanan atas. Artinya data disimpan di **localStorage browser** — seperti buku catatan yang disimpan di dalam browser itu sendiri. Praktis untuk mencoba, tapi:
-
-- ❌ Tidak bisa dibuka dari HP atau komputer lain.
-- ❌ Bisa hilang kalau data browser dibersihkan.
-
-Untuk data permanen, lanjut ke **Langkah 3 (Supabase)**.
-
-> 💡 **Pertama kali mencoba?** Buka dashboard, klik tombol **"Isi data contoh"**. Grafik dan tabel akan langsung terisi 6 bulan data supaya kamu bisa melihat semua fiturnya. Hapus kapan saja lewat tombol "Reset semua data".
+Karena kredensial Supabase belum diisi, kamu akan otomatis diarahkan ke halaman **`/login`** yang menampilkan petunjuk setup. Itu memang perilaku yang benar, bukan error. Lanjutkan ke **Langkah 2**.
 
 ---
 
@@ -109,21 +114,26 @@ personal-finance-tracker/
 │
 ├── app/                          # Semua halaman & API (Next.js App Router)
 │   ├── layout.tsx                # Kerangka HTML, metadata, skrip anti-kedip tema gelap
-│   ├── providers.tsx             # Membungkus app dengan ToastProvider + DataProvider
+│   ├── providers.tsx             # Membungkus app: Toast → Auth → Data
 │   ├── globals.css               # Design token (warna, radius) + Tailwind
+│   ├── login/page.tsx            # 🔐 Masuk dengan USERNAME & password
+│   ├── register/page.tsx         # 🔐 Daftar akun baru + cek ketersediaan username
 │   ├── page.tsx                  # 🏠 Dashboard: kartu ringkasan, 2 grafik, tabel terakhir, form cepat
 │   ├── transactions/
 │   │   └── page.tsx              # 📋 Riwayat: cari, filter, edit, hapus, export CSV
 │   ├── upload/
 │   │   └── page.tsx              # 📷 Scan OCR: upload → review → simpan
-│   └── api/                      # API Route Handlers (serverless)
+│   └── api/                      # API Route Handlers (serverless, WAJIB login)
 │       ├── transactions/route.ts         # GET (daftar) & POST (tambah)
 │       ├── transactions/[id]/route.ts    # PATCH (ubah) & DELETE (hapus)
 │       └── categories/route.ts           # GET & POST kategori
 │
 ├── components/
-│   ├── data-provider.tsx         # Context: ambil data sekali, bagikan ke semua halaman
-│   ├── data-mode-banner.tsx      # Peringatan saat masih memakai LocalStorage
+│   ├── auth-provider.tsx         # Context: siapa yang sedang login (dibaca dari cookie sesi)
+│   ├── auth-shell.tsx            # Kerangka tampilan halaman login & register
+│   ├── user-menu.tsx             # Email pengguna + tombol keluar (dengan dialog konfirmasi)
+│   ├── supabase-setup-notice.tsx # Petunjuk kalau kredensial Supabase belum diisi
+│   ├── data-provider.tsx         # Context: ambil data MILIK pengguna yang login
 │   ├── summary-cards.tsx         # 3 kartu ringkasan + tren persen
 │   ├── transaction-form.tsx      # Form tambah/edit transaksi
 │   ├── transaction-table.tsx     # Tabel transaksi + dialog konfirmasi hapus
@@ -134,22 +144,28 @@ personal-finance-tracker/
 │   │   └── category-donut-chart.tsx # Diagram donat per kategori
 │   ├── layout/
 │   │   ├── app-shell.tsx         # Navbar + konten + footer
-│   │   ├── navbar.tsx            # Menu & badge mode penyimpanan
+│   │   ├── navbar.tsx            # Menu navigasi + email pengguna + tombol keluar
 │   │   └── theme-toggle.tsx      # Tombol mode gelap/terang
 │   └── ui/                       # Komponen dasar: button, card, input, dialog, table, badge, toast
 │
 ├── lib/
-│   ├── types.ts                  # Tipe data global (Transaction, Category, dst)
-│   ├── supabase.ts               # Koneksi Supabase + deteksi apakah sudah dikonfigurasi
-│   ├── storage.ts                # 🧠 Lapisan data: Supabase ATAU LocalStorage (satu pintu)
+│   ├── types.ts                  # Tipe data global (Transaction punya kolom user_id)
+│   ├── supabase.ts               # Koneksi Supabase SISI BROWSER (sesi berbasis cookie)
+│   ├── supabase-server.ts        # Koneksi Supabase SISI SERVER (untuk proxy & route API)
+│   ├── auth.ts                   # Login username↔email internal + pesan error bahasa Indonesia
+│   ├── api-guard.ts              # Pemeriksa login untuk route API (balas 401 kalau belum masuk)
+│   ├── storage.ts                # 🧠 Lapisan data: SELALU menyertakan user_id (satu pintu)
 │   ├── ocr.ts                    # Mesin OCR + parser mutasi bank
 │   ├── analytics.ts              # Perhitungan grafik & ringkasan bulan
 │   ├── csv.ts                    # Export CSV
 │   └── utils.ts                  # Format rupiah, tanggal, helper umum
 │
 ├── supabase/
-│   └── schema.sql                # Skema tabel + RLS + kategori bawaan + view
+│   ├── schema.sql                # Skema lengkap untuk pemasangan BARU (tabel + RLS + trigger)
+│   └── migrations/
+│       └── 002_multi_user_auth.sql  # Migrasi untuk database yang SUDAH ada isinya
 │
+├── proxy.ts                      # 🔐 Penjaga rute (di Next.js 16 dulu bernama "middleware")
 ├── .env.local.example            # Contoh isi kredensial Supabase
 ├── next.config.mjs
 ├── tailwind.config.ts
@@ -157,7 +173,7 @@ personal-finance-tracker/
 └── tsconfig.json
 ```
 
-**Prinsip penting:** semua halaman memanggil `lib/storage.ts`, bukan Supabase langsung. Jadi logika aplikasi tidak perlu tahu data disimpan di mana — kalau kredensial Supabase kosong, otomatis pakai LocalStorage.
+**Prinsip penting:** semua halaman memanggil `lib/storage.ts`, bukan Supabase langsung. Di dalamnya, **setiap query selalu menyertakan filter `user_id` milik pengguna yang sedang login**. Halaman di atasnya tidak perlu tahu-menahu soal pemisahan data.
 
 ---
 
@@ -184,10 +200,12 @@ personal-finance-tracker/
 
 Kalau berhasil, kamu akan melihat pesan *Success*. Buka menu **Table Editor** di kiri — akan ada dua tabel baru:
 
-- **`categories`** — sudah terisi 12 kategori bawaan (Makanan, Transportasi, Gaji, dst).
+- **`categories`** — masih kosong; terisi otomatis saat kamu mendaftar akun nanti.
 - **`transactions`** — masih kosong, siap diisi.
 
 > Skema ini aman dijalankan berulang kali (memakai `if not exists` dan `on conflict do nothing`).
+
+> ⚠️ **Sudah pernah menjalankan `schema.sql` versi lama?** Versi lama belum punya kolom `user_id` dan RLS-nya masih terbuka. Kamu **wajib** menjalankan file tambahan `supabase/migrations/002_multi_user_auth.sql` agar data terpisah antar pengguna dan tidak bisa dibaca orang lain. Tabel `categories` yang lama (tanpa pemilik) akan tersembunyi — cara mengklaimnya ada di bagian akhir file migrasi itu.
 
 ### 2.3 Ambil kredensial
 
@@ -278,6 +296,81 @@ Setiap kali kamu `git push` ke branch `main`, Vercel otomatis mendeploy ulang.
 
 ---
 
+## 🔐 Langkah 4 — Daftar Akun & Cara Kerja Login
+
+Setelah Langkah 2 dan 3 selesai, aplikasi siap dipakai.
+
+### 4.1 ⚠️ Wajib dulu: matikan konfirmasi email
+
+Karena pendaftaran **tidak memakai email**, konfirmasi email harus dimatikan. Kalau tidak, akunnya tetap dibuat tapi kamu tidak akan pernah bisa masuk (karena tidak ada email yang bisa dikonfirmasi).
+
+**Supabase** → **Authentication** → **Sign In / Providers** → **Email** → matikan **"Confirm email"** → **Save**.
+
+### 4.2 Daftar akun pertama
+
+1. Buka aplikasinya → kamu otomatis diarahkan ke **`/login`**.
+2. Klik **"Daftar sekarang"**.
+3. Isi:
+   - **Username** — 3–20 karakter, huruf kecil, angka, titik, dan garis bawah (tanpa spasi). Contoh: `budi`, `budi_01`, `budi.santoso`
+   - **Password** — minimal 6 karakter
+   - **Ulangi Password**
+4. Saat kamu berhenti mengetik, aplikasi memeriksa username-nya. Akan muncul **"Username masih tersedia"** (hijau) atau **"sudah dipakai"** (merah).
+5. Klik **Daftar** → kamu langsung masuk ke dashboard.
+
+### 4.3 Yang berubah setelah login
+
+- **Navbar** menampilkan **username**-mu dan tombol **keluar** (ikon pintu) di kanan.
+- Setiap transaksi & kategori yang kamu buat otomatis ditandai dengan **id akunmu**.
+- Kalau kamu mengisi **"Isi data contoh"**, data itu masuk ke akunmu sendiri — tidak mengganggu pengguna lain.
+- Username terakhir yang kamu pakai diingat, jadi tidak perlu mengetik ulang setelah keluar.
+
+### 4.4 Isolasi data: dua lapis pengamanan
+
+```
+Browser                Server                  PostgreSQL
+┌─────────┐          ┌──────────────┐        ┌─────────────────────────┐
+│  login  │ ──cookie─▶│ proxy.ts     │        │ Row Level Security      │
+│         │          │ cek sesi     │        │ auth.uid() = user_id    │
+└─────────┘          └──────────────┘        │ ← penentu sebenarnya    │
+                                              └─────────────────────────┘
+```
+
+| Lapisan | Tugas | Kalau dilewati? |
+|---|---|---|
+| **`proxy.ts`** | Mengalihkan halaman sebelum dirender | Masih aman — data tidak ikut terbawa |
+| **Filter `user_id` di `lib/storage.ts`** | Membatasi query ke data milik sendiri | Masih aman — RLS menolak |
+| **Row Level Security (database)** | Menolak baris yang bukan milik `auth.uid()` | ❌ Tidak bisa dilewati |
+
+**Kesimpulan penting:** yang benar-benar melindungi datamu adalah **RLS di database**, bukan kode di halaman. Karena itu migrasi SQL di Langkah 2 wajib dijalankan sampai selesai.
+
+### 4.5 Menguji bahwa isolasi benar-benar bekerja
+
+1. Daftar **akun pertama** (mis. `budi`), lalu tambahkan 1 transaksi.
+2. Keluar, lalu daftar **akun kedua** (mis. `siti`).
+3. **Akun kedua harus melihat dashboard yang kosong** — bukan transaksi milik akun pertama. ✅
+4. Tambahkan transaksi di akun kedua, lalu masuk kembali sebagai `budi` — masing-masing hanya melihat datanya sendiri.
+
+### 4.6 Kenapa bisa pakai username tanpa email?
+
+Supabase Auth sebenarnya **hanya mengenal login lewat email**. Supaya kamu bisa memakai username saja, aplikasi memakai trik standar: username diubah menjadi alamat email "internal" yang tidak pernah dikirimi surat.
+
+```
+username "budi"   ->   budi@abcdefgh.supabase.co
+                              ^ domain proyek Supabase-mu sendiri
+```
+
+> 👤 **Pengguna tidak pernah melihat atau mengetik tanda `@`.** Di halaman login dan daftar, kolomnya murni **Username** — tanpa `@`, tanpa format email. Konversi di atas murni urusan internal aplikasi.
+
+Domainnya diambil otomatis dari `NEXT_PUBLIC_SUPABASE_URL` (lihat `USERNAME_EMAIL_DOMAIN` di `lib/auth.ts`), jadi kamu tidak perlu mengubah apa pun.
+
+> ⚠️ **Jangan pakai `example.com`.** Domain itu direservasi RFC 2606 sebagai domain contoh, dan Supabase **menolaknya** dengan pesan `Email address "..." is invalid`. Karena itu aplikasi ini memakai domain proyek Supabase sendiri — domain yang benar-benar terdaftar, sehingga pasti diterima validator, dan tidak pernah dikirimi surat karena konfirmasi email dimatikan.
+
+Keuntungan cara ini: Supabase sudah menjamin email unik, sehingga **username otomatis unik juga** — tidak perlu tabel tambahan hanya untuk menjaga keunikan username.
+
+> Karena itu, **konfirmasi email wajib dimatikan** (lihat 4.1): alamat email internal itu tidak bisa dibuka siapa pun.
+
+---
+
 ## 🔍 Cara Kerja Fitur OCR
 
 ```
@@ -324,6 +417,9 @@ Semua tahap berjalan **di browser user**. Tidak ada gambar yang diunggah ke serv
 
 Halaman-halaman aplikasi memakai `lib/storage.ts` langsung, jadi API ini tidak wajib. Tapi tersedia kalau kamu mau menghubungkannya ke script otomasi, Google Sheets, atau bot Telegram.
 
+> 🔐 **Semua endpoint sekarang WAJIB login.** Tanpa sesi yang sah, balasannya `401 Unauthorized`.
+> Setiap endpoint hanya mengembalikan **data milik pemanggilnya** — filter `user_id` ditambahkan otomatis, dan RLS di database menjadi penjamin terakhir.
+
 | Method | Endpoint | Fungsi |
 |---|---|---|
 | `GET` | `/api/transactions` | Daftar transaksi. Query opsional: `?month=2026-10&type=expense` |
@@ -358,8 +454,35 @@ curl -X POST http://localhost:3000/api/transactions \
 
 ## 🆘 Troubleshooting
 
-**Badge masih "Local" padahal `.env.local` sudah diisi**
-Restart server (`Ctrl + C`, lalu `npm run dev`). Variabel `NEXT_PUBLIC_*` hanya dibaca saat aplikasi di-build/dijalankan.
+**Selalu dialihkan ke `/login` padahal merasa sudah login**
+Sesi disimpan di **cookie**. Kalau cookie-nya hilang atau diblokir, kamu akan terus diminta login. Periksa:
+- jalankan `npm run dev` **ulang** setelah mengubah `.env.local` (variabel `NEXT_PUBLIC_*` hanya dibaca saat aplikasi dijalankan);
+- browser tidak memblokir cookie untuk `localhost` (mode Incognito ketat bisa memblokirnya);
+- jam & tanggal komputer benar — token JWT sangat sensitif terhadap selisih waktu.
+
+**`Email address "..." is invalid` saat mendaftar**
+Aplikasi masih memakai domain `example.com` untuk email internal, dan Supabase menolak domain itu. Versi terbaru sudah memakai domain proyek Supabase-mu sendiri. Pastikan kode di folder proyek sudah yang terbaru, lalu restart `npm run dev`.
+
+**`email rate limit exceeded` saat mendaftar**
+Ini bukti bahwa **"Confirm email" masih aktif** — Supabase mencoba mengirim email konfirmasi ke alamat internal (yang tidak bisa menerima surat), dan pengiriman email dibatasi. Solusi: Supabase → **Authentication** → **Sign In / Providers** → **Email** → matikan **"Confirm email"** → **Save**. Setelah itu tidak ada email yang dikirim, jadi batasnya tidak terpakai lagi. Kalau tetap muncul, tunggu ±1 jam (batas bawaan Supabase) lalu coba lagi.
+
+**Daftar akun berhasil, tapi tidak bisa masuk / diminta konfirmasi email**
+Konfirmasi email masih aktif di Supabase. Karena aplikasi ini memakai username (tanpa email asli), konfirmasi email **wajib dimatikan**. Kalau sudah ada akun yang telanjur dibuat tapi belum dikonfirmasi, hapus dulu akun itu di **Authentication** → **Users**, lalu daftar ulang.
+
+**Muncul "Gagal memuat data" tepat setelah login**
+Sudah diperbaiki: pemuatan data kini menunggu status login diketahui, dan otomatis dimuat ulang setelah berhasil masuk. Kalau masih muncul, pesannya sekarang menyebutkan penyebabnya — biasanya kolom `user_id` belum ada, artinya `supabase/schema.sql` (atau migrasi `002`) belum dijalankan.
+
+**Username sudah dipakai padahal akunnya belum pernah dipakai**
+Cek **Authentication** → **Users** di Supabase. Bisa jadi akun itu pernah dibuat lalu ditinggalkan (mis. saat konfirmasi email masih aktif). Hapus akun tersebut, lalu daftar ulang.
+
+**Data lama tidak muncul setelah update ke multi-user**
+Data lama belum punya `user_id`, dan RLS menyembunyikannya. Setelah mendaftar akun baru, jalankan perintah **"mengklaim data lama"** yang ada di bagian paling bawah `supabase/migrations/002_multi_user_auth.sql`.
+
+**Data selalu kosong / `permission denied for table transactions`**
+RLS aktif tetapi policy-nya belum lengkap. Pastikan seluruh isi `supabase/schema.sql` (atau migrasi `002`) sudah dijalankan sampai selesai — jangan hanya sebagian.
+
+**`Supabase belum dikonfigurasi` muncul di halaman /login**
+Isi `.env.local` lalu restart `npm run dev`. Petunjuk lengkap ada di dalam halaman itu sendiri.
 
 **`Gagal memuat kategori: relation "public.categories" does not exist`**
 Skema database belum dijalankan. Ulangi **Langkah 2.2** di SQL Editor.
@@ -409,9 +532,11 @@ npm run dev -- -p 3001
 
 - **`amount` selalu positif, arah uang ditentukan `type`.** Lebih mudah divalidasi, dijumlahkan, dan tidak ada bug tanda minus yang tidak sengaja.
 - **Tanggal disimpan sebagai `yyyy-MM-dd`.** Aman untuk sorting dan filter, tidak terpengaruh zona waktu.
-- **Satu lapisan data (`lib/storage.ts`).** Halaman tidak tahu-menahu soal Supabase vs LocalStorage, jadi menambah sumber data baru (mis. PocketBase) cukup mengubah satu file.
+- **Satu lapisan data (`lib/storage.ts`).** Halaman tidak tahu-menahu soal query database; semuanya lewat satu file. Jadi aturan "hanya boleh menyentuh data milik sendiri" cukup ditulis di satu tempat.
+- **Sesi di cookie, bukan localStorage.** Ini yang memungkinkan server memeriksa identitas pengguna **sebelum** halaman dirender. Kalau sesi disimpan di localStorage, proteksi rute di server tidak mungkin dilakukan.
+- **Row Level Security sebagai lapisan keamanan utama.** Kode di halaman hanya mengurus pengalaman pengguna (redirect yang rapi); aturan yang benar-benar mengikat ada di database.
+- **Kategori ditebak lewat nama, bukan id.** Setiap pengguna punya UUID kategori sendiri-sendiri, jadi nama adalah jembatan yang paling aman.
 - **OCR tidak pernah menyimpan otomatis.** Hasil mesin selalu lewat tabel review dulu — angka keuangan terlalu penting untuk dipercayakan penuh ke OCR.
-- **Kategori ditebak lewat nama, bukan id.** Id kategori berbeda antara Supabase (UUID) dan LocalStorage (`cat-makanan`), jadi nama adalah jembatan yang paling aman.
 - **DataProvider sebagai satu sumber kebenaran.** Data diambil sekali, lalu dibagikan ke semua halaman — tidak ada fetch berulang saat berpindah menu.
 - **Tidak memakai library tanggal.** Format dan parsing tanggal Indonesia cukup ditulis sendiri di `lib/utils.ts`, menghemat ukuran bundle.
 
@@ -419,9 +544,18 @@ npm run dev -- -p 3001
 
 ## ⚠️ Catatan Keamanan
 
-Aplikasi ini **belum memakai fitur login**. Kebijakan RLS di `supabase/schema.sql` sengaja mengizinkan akses penuh dengan anon key supaya langsung bisa dipakai. Artinya: siapa pun yang tahu URL + anon key project-mu bisa melihat dan mengubah datamu.
+Aplikasi ini **sudah memakai login** dengan data yang terpisah antar pengguna.
 
-Untuk pemakaian pribadi ini umumnya cukup. Kalau nanti mau dipakai banyak orang, tambahkan **Supabase Auth** dan ubah kebijakan menjadi `auth.uid() = user_id` (petunjuknya sudah ditulis sebagai komentar di `supabase/schema.sql`).
+- Setiap baris `transactions` dan `categories` punya kolom `user_id`.
+- **Row Level Security aktif** di kedua tabel, dengan aturan `auth.uid() = user_id` untuk operasi SELECT, INSERT, UPDATE, dan DELETE. Pengguna yang belum login (`anon`) tidak punya akses sama sekali.
+- Kebijakan lama yang terbuka (`using (true)`) sudah dihapus oleh migrasi. **Kalau kamu sudah pernah menjalankan `schema.sql` versi lama, wajib menjalankan `supabase/migrations/002_multi_user_auth.sql`** — kalau tidak, data masih terbuka.
+
+Sisa hal yang perlu kamu ketahui:
+
+- **`anon key` tetap boleh ada di browser.** Kunci itu memang dirancang publik; yang melindungi data adalah RLS, bukan kerahasiaan kunci.
+- **Jangan pernah menaruh `service_role` key** di `.env.local` atau di Vercel. Kunci itu melewati RLS sepenuhnya.
+- **Lupa password belum ada fiturnya.** Karena akun tidak memakai email, fitur "kirim tautan reset" dari Supabase tidak bisa dipakai (emailnya internal). Pilihan yang tersedia: hapus akun itu di Supabase → **Authentication** → **Users**, lalu daftar ulang dengan username yang sama.
+- **Hapus akun** juga belum ada tombolnya di UI. Bisa dihapus dari Supabase → **Authentication** → **Users**. Karena kolom `user_id` memakai `on delete cascade`, semua transaksi & kategori milik akun itu ikut terhapus otomatis.
 
 ---
 

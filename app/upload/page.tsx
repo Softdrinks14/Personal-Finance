@@ -4,7 +4,7 @@ import * as React from 'react';
 import Link from 'next/link';
 import { Camera, Info, ListChecks, ScanLine, Sparkles } from 'lucide-react';
 import { useData } from '@/components/data-provider';
-import { DataModeBanner } from '@/components/data-mode-banner';
+import { SupabaseSetupNotice } from '@/components/supabase-setup-notice';
 import { AppShell } from '@/components/layout/app-shell';
 import { OcrReviewTable } from '@/components/ocr-review-table';
 import { UploadZone } from '@/components/upload-zone';
@@ -84,7 +84,7 @@ export default function UploadPage() {
           </Link>
         </div>
 
-        <DataModeBanner />
+        <SupabaseSetupNotice />
 
         {/* Penjelasan cara kerja */}
         <div className="grid gap-4 sm:grid-cols-3">

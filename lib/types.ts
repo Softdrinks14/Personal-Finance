@@ -16,11 +16,10 @@ export type CategoryType = TxType | 'both';
 /** Dari mana transaksi berasal: diketik manual atau hasil scan OCR. */
 export type TxSource = 'manual' | 'ocr';
 
-/** Mode penyimpanan yang sedang aktif. */
-export type DataMode = 'supabase' | 'local';
-
 export interface Category {
   id: string;
+  /** Pemilik kategori ini. Setiap pengguna punya daftar kategorinya sendiri. */
+  user_id?: string | null;
   name: string;
   type: CategoryType;
   /** Warna HEX untuk grafik, contoh: "#f97316" */
@@ -30,6 +29,12 @@ export interface Category {
 
 export interface Transaction {
   id: string;
+  /**
+   * Pemilik transaksi ini (`auth.users.id`).
+   * Inilah yang memisahkan data antar pengguna — dijaga oleh Row Level
+   * Security di database, bukan hanya oleh kode aplikasi.
+   */
+  user_id?: string | null;
   type: TxType;
   /** Nominal dalam Rupiah, selalu angka positif. Arah uang ditentukan oleh `type`. */
   amount: number;

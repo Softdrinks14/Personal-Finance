@@ -1,74 +1,78 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { getSupabase, isSupabaseConfigured } from './supabase';
-import type { Category, DataMode, Transaction, TransactionInput } from './types';
-import { monthKeyFromDate, safeNumber, uid } from './utils';
+import { getSupabase } from './supabase';
+import type { Category, Transaction, TransactionInput } from './types';
+import { safeNumber } from './utils';
 
 /* =========================================================================
- * LAPISAN DATA (DATA LAYER)
+ * LAPISAN DATA (DATA LAYER) — MULTI-USER
  * -------------------------------------------------------------------------
- * Semua halaman & komponen TIDAK boleh memanggil Supabase langsung.
- * Mereka memanggil fungsi-fungsi di file ini. Dengan begitu:
- *   - Kalau Supabase sudah diisi  -> data masuk ke PostgreSQL (online, multi-device)
- *   - Kalau Supabase belum diisi  -> data masuk ke localStorage (offline, 1 browser)
- * Logika aplikasi di atasnya tidak perlu tahu bedanya.
+ * Semua halaman & komponen TIDAK memanggil Supabase langsung; mereka memakai
+ * fungsi-fungsi di file ini.
+ *
+ * KEAMANAN — ada DUA lapis, dan keduanya penting:
+ *
+ *   1. Kode (file ini) SELALU mengirim `user_id` milik pengguna yang sedang
+ *      login, dan SELALU menambahkan filter `.eq('user_id', ...)`.
+ *   2. Database (Row Level Security di Supabase) menolak baris apa pun yang
+ *      tidak cocok dengan `auth.uid()`.
+ *
+ * Lapisan 2-lah yang benar-benar mengamankan data: walaupun lapisan 1 punya
+ * bug, pengguna tetap tidak bisa melihat atau mengubah data orang lain.
+ * Lapisan 1 membuat kesalahan ketahuan lebih awal (error jelas, bukan data
+ * kosong yang membingungkan).
  * ========================================================================= */
 
-const TX_KEY = 'pft.transactions.v1';
-const CAT_KEY = 'pft.categories.v1';
-
-/** Kategori bawaan. Id-nya dipakai apa adanya di mode LocalStorage. */
-export const DEFAULT_CATEGORIES: Category[] = [
-  { id: 'cat-makanan', name: 'Makanan & Minuman', type: 'expense', color: '#f97316' },
-  { id: 'cat-transportasi', name: 'Transportasi', type: 'expense', color: '#0ea5e9' },
-  { id: 'cat-tagihan', name: 'Tagihan & Utilitas', type: 'expense', color: '#8b5cf6' },
-  { id: 'cat-belanja', name: 'Belanja', type: 'expense', color: '#ec4899' },
-  { id: 'cat-hiburan', name: 'Hiburan', type: 'expense', color: '#f43f5e' },
-  { id: 'cat-kesehatan', name: 'Kesehatan', type: 'expense', color: '#14b8a6' },
-  { id: 'cat-pendidikan', name: 'Pendidikan', type: 'expense', color: '#6366f1' },
-  { id: 'cat-lainnya', name: 'Lain-lain', type: 'expense', color: '#64748b' },
-  { id: 'cat-gaji', name: 'Gaji', type: 'income', color: '#10b981' },
-  { id: 'cat-bonus', name: 'Bonus & THR', type: 'income', color: '#22c55e' },
-  { id: 'cat-usaha', name: 'Usaha / Freelance', type: 'income', color: '#84cc16' },
-  { id: 'cat-investasi', name: 'Investasi', type: 'both', color: '#eab308' },
+/** Daftar kategori bawaan. Sumber kebenaran ada di trigger `handle_new_user()`. */
+export const DEFAULT_CATEGORIES: ReadonlyArray<{ name: string; type: Category['type']; color: string }> = [
+  { name: 'Makanan & Minuman', type: 'expense', color: '#f97316' },
+  { name: 'Transportasi', type: 'expense', color: '#0ea5e9' },
+  { name: 'Tagihan & Utilitas', type: 'expense', color: '#8b5cf6' },
+  { name: 'Belanja', type: 'expense', color: '#ec4899' },
+  { name: 'Hiburan', type: 'expense', color: '#f43f5e' },
+  { name: 'Kesehatan', type: 'expense', color: '#14b8a6' },
+  { name: 'Pendidikan', type: 'expense', color: '#6366f1' },
+  { name: 'Lain-lain', type: 'expense', color: '#64748b' },
+  { name: 'Gaji', type: 'income', color: '#10b981' },
+  { name: 'Bonus & THR', type: 'income', color: '#22c55e' },
+  { name: 'Usaha / Freelance', type: 'income', color: '#84cc16' },
+  { name: 'Investasi', type: 'both', color: '#eab308' },
 ];
 
-/** Mode penyimpanan yang sedang aktif saat ini. */
-export function dataMode(): DataMode {
-  return isSupabaseConfigured ? 'supabase' : 'local';
-}
-
-export const DATA_MODE_LABEL: Record<DataMode, string> = {
-  supabase: 'Supabase (Cloud)',
-  local: 'LocalStorage (Browser)',
-};
-
 /* ------------------------------------------------------------------ */
-/* Helper LocalStorage                                                 */
+/* Helper                                                              */
 /* ------------------------------------------------------------------ */
 
-function readLocal<T>(key: string, fallback: T): T {
-  if (typeof window === 'undefined') return fallback;
-  try {
-    const raw = window.localStorage.getItem(key);
-    if (!raw) return fallback;
-    return JSON.parse(raw) as T;
-  } catch {
-    return fallback;
+function requireClient(): SupabaseClient {
+  const client = getSupabase();
+  if (!client) {
+    throw new Error(
+      'Supabase belum dikonfigurasi. Aplikasi ini memerlukan Supabase untuk login dan menyimpan data.',
+    );
   }
+  return client;
 }
 
-function writeLocal<T>(key: string, value: T): void {
-  if (typeof window === 'undefined') return;
-  try {
-    window.localStorage.setItem(key, JSON.stringify(value));
-  } catch {
-    // localStorage bisa penuh / diblokir (mode private). Diamkan saja.
+/**
+ * Ambil id pengguna yang sedang login.
+ *
+ * `auth.getUser()` memverifikasi token ke server Supabase, jadi id ini
+ * benar-benar milik pengguna yang sah — bukan sekadar isi cookie yang bisa
+ * dipalsukan dari sisi browser.
+ */
+export async function getCurrentUserId(client: SupabaseClient): Promise<string | null> {
+  const {
+    data: { user },
+  } = await client.auth.getUser();
+  return user?.id ?? null;
+}
+
+async function requireUserId(client: SupabaseClient): Promise<string> {
+  const userId = await getCurrentUserId(client);
+  if (!userId) {
+    throw new Error('Sesi login tidak ditemukan. Silakan masuk (login) kembali.');
   }
+  return userId;
 }
-
-/* ------------------------------------------------------------------ */
-/* Helper Supabase                                                     */
-/* ------------------------------------------------------------------ */
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -81,6 +85,7 @@ interface RawTransaction extends Omit<Transaction, 'amount' | 'date'> {
 function normalizeTransaction(row: RawTransaction): Transaction {
   return {
     id: String(row.id),
+    user_id: row.user_id ?? null,
     type: row.type,
     amount: safeNumber(row.amount),
     date: String(row.date).slice(0, 10),
@@ -91,36 +96,29 @@ function normalizeTransaction(row: RawTransaction): Transaction {
   };
 }
 
-function sortTransactions(list: Transaction[]): Transaction[] {
-  return [...list].sort((a, b) => {
-    if (a.date !== b.date) return a.date < b.date ? 1 : -1;
-    return String(b.created_at ?? '').localeCompare(String(a.created_at ?? ''));
-  });
-}
-
 /**
- * Pastikan category_id yang dipakai benar-benar ada di tabel `categories`.
- * Kasus yang ditangani: user memakai mode LocalStorage (id kategori seperti
- * "cat-makanan"), lalu pindah ke Supabase (id kategori berupa UUID).
- * Kita cari berdasarkan nama, dan buat kalau belum ada.
+ * Pastikan category_id yang dipakai benar-benar milik pengguna ini.
+ * Kalau id-nya bukan UUID (mis. data lama "cat-makanan"), kita carikan
+ * kategori dengan nama yang sama miliknya sendiri.
  */
-async function ensureCategoryId(
+async function resolveCategoryId(
   client: SupabaseClient,
   categoryId: string | null,
+  userId: string,
   cache: Category[],
 ): Promise<string | null> {
   if (!categoryId) return null;
   if (UUID_RE.test(categoryId)) return categoryId;
 
-  const local = DEFAULT_CATEGORIES.find((c) => c.id === categoryId);
-  if (!local) return null;
+  const fallback = DEFAULT_CATEGORIES.find((c) => c.name === categoryId);
+  if (!fallback) return null;
 
-  const existing = cache.find((c) => c.name === local.name);
+  const existing = cache.find((c) => c.name === fallback.name);
   if (existing) return existing.id;
 
   const { data, error } = await client
     .from('categories')
-    .insert({ name: local.name, type: local.type, color: local.color })
+    .insert({ user_id: userId, name: fallback.name, type: fallback.type, color: fallback.color })
     .select()
     .single();
 
@@ -134,34 +132,19 @@ async function ensureCategoryId(
 /* ------------------------------------------------------------------ */
 
 export async function listCategories(): Promise<Category[]> {
-  const client = getSupabase();
+  const client = requireClient();
+  const userId = await requireUserId(client);
 
-  if (!client) {
-    const stored = readLocal<Category[]>(CAT_KEY, []);
-    if (stored.length > 0) return stored;
-    writeLocal(CAT_KEY, DEFAULT_CATEGORIES);
-    return DEFAULT_CATEGORIES;
-  }
-
-  const { data, error } = await client.from('categories').select('*').order('name');
-  if (error) throw new Error(`Gagal memuat kategori: ${error.message}`);
-
-  const rows = (data ?? []) as Category[];
-  if (rows.length > 0) return rows;
-
-  // Tabel masih kosong -> isi kategori bawaan agar aplikasi langsung siap pakai.
-  const { data: seeded, error: seedError } = await client
+  // RLS sudah menyaring, tapi filter eksplisit membuat maksudnya terbaca
+  // dan tetap benar walau RLS sedang tidak aktif.
+  const { data, error } = await client
     .from('categories')
-    .insert(DEFAULT_CATEGORIES.map(({ name, type, color }) => ({ name, type, color })))
-    .select();
+    .select('*')
+    .eq('user_id', userId)
+    .order('name');
 
-  if (seedError || !seeded) {
-    // Kalau gagal (misal kebijakan RLS), tetap kembalikan daftar lokal
-    // supaya UI tidak kosong.
-    return DEFAULT_CATEGORIES;
-  }
-
-  return seeded as Category[];
+  if (error) throw new Error(`Gagal memuat kategori: ${error.message}`);
+  return (data ?? []) as Category[];
 }
 
 export async function createCategory(input: {
@@ -169,16 +152,15 @@ export async function createCategory(input: {
   type: Category['type'];
   color: string;
 }): Promise<Category> {
-  const client = getSupabase();
+  const client = requireClient();
+  const userId = await requireUserId(client);
 
-  if (!client) {
-    const stored = readLocal<Category[]>(CAT_KEY, DEFAULT_CATEGORIES);
-    const created: Category = { id: uid(), ...input };
-    writeLocal(CAT_KEY, [...stored, created]);
-    return created;
-  }
+  const { data, error } = await client
+    .from('categories')
+    .insert({ ...input, user_id: userId })
+    .select()
+    .single();
 
-  const { data, error } = await client.from('categories').insert(input).select().single();
   if (error) throw new Error(`Gagal menyimpan kategori: ${error.message}`);
   return data as Category;
 }
@@ -188,15 +170,13 @@ export async function createCategory(input: {
 /* ------------------------------------------------------------------ */
 
 export async function listTransactions(): Promise<Transaction[]> {
-  const client = getSupabase();
-
-  if (!client) {
-    return sortTransactions(readLocal<Transaction[]>(TX_KEY, []));
-  }
+  const client = requireClient();
+  const userId = await requireUserId(client);
 
   const { data, error } = await client
     .from('transactions')
     .select('*')
+    .eq('user_id', userId)
     .order('date', { ascending: false })
     .order('created_at', { ascending: false });
 
@@ -208,19 +188,8 @@ export async function listTransactions(): Promise<Transaction[]> {
 export async function createTransactions(inputs: TransactionInput[]): Promise<Transaction[]> {
   if (inputs.length === 0) return [];
 
-  const client = getSupabase();
-
-  if (!client) {
-    const existing = readLocal<Transaction[]>(TX_KEY, []);
-    const now = new Date().toISOString();
-    const created: Transaction[] = inputs.map((input) => ({
-      ...input,
-      id: uid(),
-      created_at: now,
-    }));
-    writeLocal(TX_KEY, [...existing, ...created]);
-    return created;
-  }
+  const client = requireClient();
+  const userId = await requireUserId(client);
 
   const categories = await listCategories().catch(() => [] as Category[]);
   const cache: Category[] = [...categories];
@@ -228,10 +197,12 @@ export async function createTransactions(inputs: TransactionInput[]): Promise<Tr
   const payload: Array<Record<string, unknown>> = [];
   for (const input of inputs) {
     payload.push({
+      // INI KUNCI ISOLASI DATA: setiap baris ditandai milik siapa.
+      user_id: userId,
       type: input.type,
       amount: input.amount,
       date: input.date,
-      category_id: await ensureCategoryId(client, input.category_id, cache),
+      category_id: await resolveCategoryId(client, input.category_id, userId, cache),
       note: input.note ?? null,
       source: input.source,
     });
@@ -251,30 +222,25 @@ export async function updateTransaction(
   id: string,
   patch: Partial<TransactionInput>,
 ): Promise<Transaction | null> {
-  const client = getSupabase();
+  const client = requireClient();
+  const userId = await requireUserId(client);
 
-  if (!client) {
-    const existing = readLocal<Transaction[]>(TX_KEY, []);
-    let updated: Transaction | null = null;
-    const next = existing.map((tx) => {
-      if (tx.id !== id) return tx;
-      updated = { ...tx, ...patch };
-      return updated;
-    });
-    writeLocal(TX_KEY, next);
-    return updated;
-  }
-
-  const categories = await listCategories().catch(() => [] as Category[]);
   const payload: Record<string, unknown> = { ...patch };
   if ('category_id' in patch) {
-    payload.category_id = await ensureCategoryId(client, patch.category_id ?? null, [...categories]);
+    const categories = await listCategories().catch(() => [] as Category[]);
+    payload.category_id = await resolveCategoryId(
+      client,
+      patch.category_id ?? null,
+      userId,
+      [...categories],
+    );
   }
 
   const { data, error } = await client
     .from('transactions')
     .update(payload)
     .eq('id', id)
+    .eq('user_id', userId) // pengaman kedua: hanya baris milik sendiri
     .select()
     .single();
 
@@ -283,31 +249,19 @@ export async function updateTransaction(
 }
 
 export async function deleteTransaction(id: string): Promise<void> {
-  const client = getSupabase();
+  const client = requireClient();
+  const userId = await requireUserId(client);
 
-  if (!client) {
-    const existing = readLocal<Transaction[]>(TX_KEY, []);
-    writeLocal(TX_KEY, existing.filter((tx) => tx.id !== id));
-    return;
-  }
-
-  const { error } = await client.from('transactions').delete().eq('id', id);
+  const { error } = await client.from('transactions').delete().eq('id', id).eq('user_id', userId);
   if (error) throw new Error(`Gagal menghapus transaksi: ${error.message}`);
 }
 
-/** Hapus semua transaksi (kategori dibiarkan). Dipakai tombol "Reset data". */
+/** Hapus semua transaksi MILIK SAYA (kategori & data pengguna lain aman). */
 export async function deleteAllTransactions(): Promise<void> {
-  const client = getSupabase();
+  const client = requireClient();
+  const userId = await requireUserId(client);
 
-  if (!client) {
-    writeLocal(TX_KEY, []);
-    return;
-  }
-
-  const { error } = await client
-    .from('transactions')
-    .delete()
-    .neq('id', '00000000-0000-0000-0000-000000000000');
+  const { error } = await client.from('transactions').delete().eq('user_id', userId);
   if (error) throw new Error(`Gagal menghapus data: ${error.message}`);
 }
 
@@ -316,20 +270,26 @@ export async function deleteAllTransactions(): Promise<void> {
 /* ------------------------------------------------------------------ */
 
 /**
- * Buat data contoh 6 bulan terakhir supaya grafik dashboard langsung terisi.
- * Berguna untuk belajar / demo ke orang lain.
+ * Buat data contoh 6 bulan terakhir untuk pengguna yang sedang login,
+ * supaya grafik dashboard langsung terisi.
+ *
+ * Kategori dicari berdasarkan NAMA, karena setiap pengguna punya id kategori
+ * sendiri-sendiri (UUID berbeda).
  */
 export async function seedDemoTransactions(): Promise<number> {
-  const expenseTemplates: Array<{ cat: string; note: string; min: number; max: number; freq: number }> = [
-    { cat: 'cat-makanan', note: 'Makan siang', min: 20_000, max: 60_000, freq: 12 },
-    { cat: 'cat-makanan', note: 'Belanja bulanan', min: 250_000, max: 600_000, freq: 2 },
-    { cat: 'cat-transportasi', note: 'Bensin / ojek online', min: 25_000, max: 120_000, freq: 8 },
-    { cat: 'cat-tagihan', note: 'Listrik & internet', min: 250_000, max: 550_000, freq: 1 },
-    { cat: 'cat-tagihan', note: 'Pulsa & paket data', min: 50_000, max: 150_000, freq: 1 },
-    { cat: 'cat-belanja', note: 'Belanja online', min: 80_000, max: 450_000, freq: 3 },
-    { cat: 'cat-hiburan', note: 'Langganan streaming', min: 54_000, max: 186_000, freq: 1 },
-    { cat: 'cat-kesehatan', note: 'Vitamin & obat', min: 45_000, max: 220_000, freq: 1 },
+  const templates: Array<{ cat: string; note: string; min: number; max: number; freq: number }> = [
+    { cat: 'Makanan & Minuman', note: 'Makan siang', min: 20_000, max: 60_000, freq: 12 },
+    { cat: 'Makanan & Minuman', note: 'Belanja bulanan', min: 250_000, max: 600_000, freq: 2 },
+    { cat: 'Transportasi', note: 'Bensin / ojek online', min: 25_000, max: 120_000, freq: 8 },
+    { cat: 'Tagihan & Utilitas', note: 'Listrik & internet', min: 250_000, max: 550_000, freq: 1 },
+    { cat: 'Tagihan & Utilitas', note: 'Pulsa & paket data', min: 50_000, max: 150_000, freq: 1 },
+    { cat: 'Belanja', note: 'Belanja online', min: 80_000, max: 450_000, freq: 3 },
+    { cat: 'Hiburan', note: 'Langganan streaming', min: 54_000, max: 186_000, freq: 1 },
+    { cat: 'Kesehatan', note: 'Vitamin & obat', min: 45_000, max: 220_000, freq: 1 },
   ];
+
+  const categories = await listCategories();
+  const idByName = new Map(categories.map((c) => [c.name, c.id]));
 
   const now = new Date();
   const inputs: TransactionInput[] = [];
@@ -344,13 +304,12 @@ export async function seedDemoTransactions(): Promise<number> {
     const iso = (day: number) =>
       `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 
-    // Pemasukan: gaji tanggal 25, bonus tiap 3 bulan
     if (maxDay >= 25) {
       inputs.push({
         type: 'income',
         amount: 8_500_000,
         date: iso(25),
-        category_id: 'cat-gaji',
+        category_id: idByName.get('Gaji') ?? null,
         note: 'Gaji bulanan',
         source: 'manual',
       });
@@ -360,14 +319,13 @@ export async function seedDemoTransactions(): Promise<number> {
         type: 'income',
         amount: 1_500_000,
         date: iso(10),
-        category_id: 'cat-usaha',
+        category_id: idByName.get('Usaha / Freelance') ?? null,
         note: 'Proyek freelance',
         source: 'manual',
       });
     }
 
-    // Pengeluaran acak
-    for (const template of expenseTemplates) {
+    for (const template of templates) {
       for (let i = 0; i < template.freq; i += 1) {
         const day = 1 + Math.floor(Math.random() * maxDay);
         const amount = Math.round((template.min + Math.random() * (template.max - template.min)) / 500) * 500;
@@ -375,7 +333,7 @@ export async function seedDemoTransactions(): Promise<number> {
           type: 'expense',
           amount,
           date: iso(Math.min(day, maxDay)),
-          category_id: template.cat,
+          category_id: idByName.get(template.cat) ?? null,
           note: template.note,
           source: 'manual',
         });
@@ -385,9 +343,4 @@ export async function seedDemoTransactions(): Promise<number> {
 
   const created = await createTransactions(inputs);
   return created.length;
-}
-
-/** Ringkasan bulan berjalan — dipakai di kartu dashboard. */
-export function currentMonthKey(): string {
-  return monthKeyFromDate(new Date());
 }
