@@ -15,7 +15,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { buildCategoryBreakdown, buildMonthlySeries, recentTransactions, summarizeMonth } from '@/lib/analytics';
 import type { TxType } from '@/lib/types';
-import { MONTHS_ID_LONG, cn, monthLabel } from '@/lib/utils';
+import { MONTHS_ID_LONG, cn, lastNMonthKeys, monthKeyFromDate, monthLabel } from '@/lib/utils';
 
 /**
  * HALAMAN DASHBOARD  (route: "/")
@@ -39,7 +39,10 @@ export default function DashboardPage() {
   } = useData();
 
   // Bulan yang sedang dilihat (default: bulan ini).
-  const [period, setPeriod] = React.useState<string>(() => new Date().toISOString().slice(0, 7));
+  // PENTING: pakai monthKeyFromDate (waktu LOKAL), bukan toISOString() yang
+  // memakai UTC. Di WIB (UTC+7), tanggal 1 pukul 00:00–07:00 masih "bulan lalu"
+  // menurut UTC, sehingga default-nya bisa meleset satu bulan.
+  const [period, setPeriod] = React.useState<string>(() => monthKeyFromDate(new Date()));
   const [breakdownType, setBreakdownType] = React.useState<TxType>('expense');
 
   const summary = React.useMemo(() => summarizeMonth(transactions, period), [transactions, period]);
@@ -53,6 +56,21 @@ export default function DashboardPage() {
     [periodTransactions, categories, breakdownType],
   );
   const recent = React.useMemo(() => recentTransactions(transactions, 5), [transactions]);
+
+  /*
+   * Daftar bulan pada dropdown "Pilih bulan".
+   *
+   * Isinya = 6 bulan terakhir (dihitung dari tanggal hari ini) DITAMBAH bulan
+   * apa pun yang punya transaksi. Jadi:
+   *   - Bulan baru otomatis muncul begitu kalender berganti bulan (tanpa diisi manual).
+   *   - Data lama (lebih dari 6 bulan lalu) tetap bisa dibuka, tidak "hilang" dari pilihan.
+   * Urutan: terbaru di atas.
+   */
+  const periodOptions = React.useMemo(() => {
+    const keys = new Set<string>(lastNMonthKeys(6));
+    for (const tx of transactions) keys.add(tx.date.slice(0, 7));
+    return [...keys].sort((a, b) => (a < b ? 1 : -1));
+  }, [transactions]);
 
   const periodLabel = `${MONTHS_ID_LONG[Number(period.slice(5, 7)) - 1]} ${period.slice(0, 4)}`;
   const hasAnyData = transactions.length > 0;
@@ -79,14 +97,11 @@ export default function DashboardPage() {
               onChange={(event) => setPeriod(event.target.value)}
               className="h-10 rounded-md border border-input bg-card px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
-              {monthlySeries
-                .slice()
-                .reverse()
-                .map((point) => (
-                  <option key={point.key} value={point.key}>
-                    {monthLabel(point.key)}
-                  </option>
-                ))}
+              {periodOptions.map((key) => (
+                <option key={key} value={key}>
+                  {monthLabel(key)}
+                </option>
+              ))}
             </select>
 
             <Button variant="outline" onClick={() => void loadDemoData()}>

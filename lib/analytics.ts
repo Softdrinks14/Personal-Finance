@@ -1,5 +1,5 @@
 import type { Category, Transaction, TxType } from './types';
-import { lastNMonthKeys, monthKey, monthLabel } from './utils';
+import { lastNMonthKeys, monthKey, monthKeyFromDate, monthLabel } from './utils';
 
 /* =========================================================================
  * LAPISAN ANALITIK
@@ -154,5 +154,8 @@ export function recentTransactions(transactions: Transaction[], limit = 5): Tran
 /** Daftar bulan yang punya data (untuk dropdown filter). */
 export function availableMonths(transactions: Transaction[]): string[] {
   const keys = new Set(transactions.map((tx) => monthKey(tx.date)));
+  // Bulan berjalan selalu ikut, supaya "bulan ini" tetap bisa dipilih
+  // walaupun belum ada transaksi di bulan tersebut.
+  keys.add(monthKeyFromDate(new Date()));
   return [...keys].sort((a, b) => (a < b ? 1 : -1));
 }
