@@ -105,7 +105,7 @@ function sumType(transactions: Transaction[], type: TxType): number {
 }
 
 /** Ubah "2026-10" menjadi "2026-09" (bulan sebelumnya). */
-function previousMonthKey(key: string): string {
+export function previousMonthKey(key: string): string {
   const [yearText, monthText] = key.split('-');
   const year = Number(yearText);
   const month = Number(monthText);
@@ -158,4 +158,110 @@ export function availableMonths(transactions: Transaction[]): string[] {
   // walaupun belum ada transaksi di bulan tersebut.
   keys.add(monthKeyFromDate(new Date()));
   return [...keys].sort((a, b) => (a < b ? 1 : -1));
+}
+
+/* =========================================================================
+ * SALDO SISA BULAN LALU (SALDO BERJALAN / CARRY-OVER)
+ * -------------------------------------------------------------------------
+ * Analogi: dompet di akhir bulan tidak dikosongkan. Isinya "dibawa" ke bulan
+ * berikutnya sebagai saldo awal.
+ *
+ * MASALAH YANG HARUS DIHINDARI: HITUNG DOBEL.
+ *   Kalau saldo bulan lalu DICATAT sebagai pemasukan, lalu besok-besok
+ *   dihitung lagi dari transaksi, uang yang sama terhitung dua kali dan
+ *   saldo akan membengkak.
+ *
+ * SOLUSINYA: transaksi berlabel "Saldo sisa bulan lalu" DIKECUALIKAN dari
+ * perhitungan saldo berjalan. Jadi:
+ *
+ *   saldo bulan lalu  = (pemasukan - pengeluaran) semua bulan SEBELUM
+ *                       periode ini, tanpa transaksi berlabel
+ *   arus bersih bulan = (pemasukan - pengeluaran) periode ini, tanpa label
+ *   total saldo akhir = saldo bulan lalu + arus bersih bulan
+ *
+ * "Total saldo akhir" inilah yang otomatis menjadi "saldo bulan lalu" di
+ * bulan berikutnya, sehingga perhitungannya bersambung tanpa dobel.
+ * ========================================================================= */
+
+/** Keterangan baku untuk transaksi saldo sisa bulan lalu. */
+export const CARRY_OVER_NOTE = 'Saldo sisa bulan lalu';
+
+/** Huruf kecil, dipakai untuk mencocokkan keterangan (tahan beda kapital/spasi). */
+const CARRY_OVER_PREFIX = 'saldo sisa bulan lalu';
+
+/**
+ * Apakah transaksi ini penanda "saldo sisa bulan lalu"?
+ * Hanya pemasukan yang dihitung, supaya catatan pengeluaran bernama mirip
+ * tidak ikut diabaikan.
+ */
+export function isCarryOverTransaction(tx: Transaction): boolean {
+  if (tx.type !== 'income') return false;
+  return (tx.note ?? '').trim().toLowerCase().startsWith(CARRY_OVER_PREFIX);
+}
+
+/** Keterangan lengkap untuk transaksi penanda, contoh: "Saldo sisa bulan lalu (Okt 2026)". */
+export function carryOverNoteFor(periodLabel: string): string {
+  return `${CARRY_OVER_NOTE} (${periodLabel})`;
+}
+
+/** Pengaruh satu transaksi ke saldo. Transaksi penanda bernilai 0 (tidak dihitung dua kali). */
+function balanceFlow(tx: Transaction): number {
+  if (isCarryOverTransaction(tx)) return 0;
+  return tx.type === 'income' ? tx.amount : -tx.amount;
+}
+
+export interface CarryOverSummary {
+  /** "2026-09" — bulan sebelum periode yang sedang dilihat */
+  previousKey: string;
+  /** "Sep 2026" */
+  previousLabel: string;
+  /** sisa uang sampai akhir bulan lalu (boleh negatif kalau defisit) */
+  amount: number;
+  /** berapa transaksi sebelum periode ini yang ikut dihitung */
+  sourceCount: number;
+  /** arus bersih periode ini, tanpa transaksi penanda */
+  periodNet: number;
+  /** saldo di akhir periode = amount + periodNet */
+  endBalance: number;
+  /** sudah ada transaksi penanda di periode ini? */
+  recorded: boolean;
+  /** nominal transaksi penanda yang sudah tercatat */
+  recordedAmount: number;
+  recordedTransaction: Transaction | null;
+  /** nominal tercatat berbeda dari hasil hitung (mis. ada transaksi lama yang diubah) */
+  needsSync: boolean;
+}
+
+/**
+ * Hitung saldo sisa bulan lalu untuk satu periode.
+ * Contoh: computeCarryOver(txs, "2026-10") -> sisa uang s.d. akhir September.
+ */
+export function computeCarryOver(transactions: Transaction[], period: string): CarryOverSummary {
+  let amount = 0;
+  let sourceCount = 0;
+
+  for (const tx of transactions) {
+    if (monthKey(tx.date) >= period) continue;
+    if (isCarryOverTransaction(tx)) continue;
+    amount += balanceFlow(tx);
+    sourceCount += 1;
+  }
+
+  const periodTransactions = transactions.filter((tx) => monthKey(tx.date) === period);
+  const recordedTransaction = periodTransactions.find(isCarryOverTransaction) ?? null;
+  const periodNet = periodTransactions.reduce((acc, tx) => acc + balanceFlow(tx), 0);
+  const recordedAmount = recordedTransaction?.amount ?? 0;
+
+  return {
+    previousKey: previousMonthKey(period),
+    previousLabel: monthLabel(previousMonthKey(period)),
+    amount,
+    sourceCount,
+    periodNet,
+    endBalance: amount + periodNet,
+    recorded: Boolean(recordedTransaction),
+    recordedAmount,
+    recordedTransaction,
+    needsSync: Boolean(recordedTransaction) && Math.round(recordedAmount) !== Math.round(amount),
+  };
 }

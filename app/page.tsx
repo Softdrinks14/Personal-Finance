@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { ArrowRight, Plus, RefreshCw, Sparkles, Trash2 } from 'lucide-react';
 import { CategoryDonutChart } from '@/components/charts/category-donut-chart';
 import { MonthlyBarChart } from '@/components/charts/monthly-bar-chart';
+import { CarryOverCard } from '@/components/carry-over-card';
 import { useData } from '@/components/data-provider';
 import { SupabaseSetupNotice } from '@/components/supabase-setup-notice';
 import { AppShell } from '@/components/layout/app-shell';
@@ -13,7 +14,7 @@ import { TransactionForm } from '@/components/transaction-form';
 import { TransactionTable } from '@/components/transaction-table';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { buildCategoryBreakdown, buildMonthlySeries, recentTransactions, summarizeMonth } from '@/lib/analytics';
+import { buildCategoryBreakdown, buildMonthlySeries, computeCarryOver, recentTransactions, summarizeMonth } from '@/lib/analytics';
 import type { TxType } from '@/lib/types';
 import { MONTHS_ID_LONG, cn, lastNMonthKeys, monthKeyFromDate, monthLabel } from '@/lib/utils';
 
@@ -22,6 +23,7 @@ import { MONTHS_ID_LONG, cn, lastNMonthKeys, monthKeyFromDate, monthLabel } from
  *
  * Isinya:
  *  1. Kartu ringkasan bulan ini (pemasukan, pengeluaran, saldo bersih)
+ *  1b. Kartu saldo sisa bulan lalu + total saldo berjalan
  *  2. Grafik batang 6 bulan terakhir
  *  3. Diagram donat pengeluaran per kategori
  *  4. Tabel 5 transaksi terakhir
@@ -46,6 +48,7 @@ export default function DashboardPage() {
   const [breakdownType, setBreakdownType] = React.useState<TxType>('expense');
 
   const summary = React.useMemo(() => summarizeMonth(transactions, period), [transactions, period]);
+  const carryOver = React.useMemo(() => computeCarryOver(transactions, period), [transactions, period]);
   const monthlySeries = React.useMemo(() => buildMonthlySeries(transactions, 6), [transactions]);
   const periodTransactions = React.useMemo(
     () => transactions.filter((tx) => tx.date.slice(0, 7) === period),
@@ -120,6 +123,9 @@ export default function DashboardPage() {
 
         {/* 1. Kartu ringkasan */}
         <SummaryCards summary={summary} periodLabel={periodLabel} />
+
+        {/* 1b. Saldo sisa bulan lalu + total saldo berjalan (tidak dobel hitung) */}
+        <CarryOverCard period={period} periodLabel={periodLabel} summary={carryOver} />
 
         {/* 2 & 3. Grafik */}
         <div className="grid gap-4 lg:grid-cols-3">

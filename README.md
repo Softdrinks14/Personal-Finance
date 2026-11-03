@@ -19,6 +19,7 @@ Dibuat untuk pemula: semua penjelasan pakai bahasa Indonesia, dan aplikasi **lan
 
 ### 2. Dashboard & Analitik Visual (`/`)
 - Tiga kartu ringkasan: **Total Pemasukan**, **Total Pengeluaran**, **Saldo Bersih** bulan ini — lengkap dengan perbandingan persen vs bulan lalu.
+- **Kartu Saldo Sisa Bulan Lalu**: menampilkan sisa uang dari bulan sebelumnya, arus bersih bulan ini, dan **total saldo akhir** yang otomatis dibawa ke bulan berikutnya. Ada tombol **"Catat sebagai pemasukan"** yang membuat satu transaksi pemasukan bertanggal 1 dengan keterangan `Saldo sisa bulan lalu (Okt 2026)` — transaksi berlabel ini tidak dihitung dua kali, dan kartu menawarkan **"Sesuaikan"** kalau transaksi bulan lalu berubah.
 - **Grafik batang**: pemasukan vs pengeluaran 6 bulan terakhir.
 - **Diagram donat**: pembagian per kategori (bisa diganti antara "Keluar" dan "Masuk").
 - Tabel **5 transaksi terakhir**.
@@ -49,7 +50,7 @@ Dibuat untuk pemula: semua penjelasan pakai bahasa Indonesia, dan aplikasi **lan
 - **Export CSV** — siap dibuka di Excel/Google Sheets (sudah pakai BOM + baris total).
 
 ### 6. Lain-lain
-- 🌙 **Mode gelap / terang** (tersimpan di localStorage, tanpa kedipan saat reload).
+- 🌙 **Mode gelap sebagai default** (bisa diganti ke terang lewat tombol di navbar; pilihan tersimpan di localStorage, tanpa kedipan saat reload).
 - 📱 **Responsif** — tabel bisa di-scroll horizontal di HP.
 - 🔔 **Notifikasi toast** untuk setiap aksi.
 - 🏷️ Email pengguna yang sedang login tampil di navbar, di samping tombol keluar.
@@ -528,7 +529,91 @@ npm run dev -- -p 3001
 
 ---
 
+## 📊 Batas Paket Gratis & Rencana Migrasi
+
+### Angka resminya (Supabase Free, per 2026)
+
+| Batas | Nilai | Artinya untuk aplikasi ini |
+|---|---|---|
+| Ukuran database | **500 MB** | ±870.000 transaksi |
+| Egress (transfer data) | **5 GB / bulan** | cukup untuk pemakaian pribadi |
+| Pengguna aktif | **50.000 / bulan** | jauh lebih dari cukup |
+| Request API | **tanpa batas** | aman |
+| Project aktif | **2** | cukup untuk 1 aplikasi + 1 cadangan |
+| **Project di-pause** | **setelah 7 hari tidak dipakai** | ⚠️ ini yang paling perlu diperhatikan |
+
+### Apakah kamu akan kehabisan kuota?
+
+**Hampir pasti tidak.** Hitungannya:
+
+```
+1 transaksi   ≈ 0,6 KB  (termasuk index database)
+500 MB        ≈ 870.000 transaksi
+
+1 orang, 10 transaksi/hari  → 3.650/tahun  → ±240 tahun
+10 orang, 10 transaksi/hari → 36.500/tahun → ±24 tahun
+```
+
+Jadi **ukuran database bukan masalah** untuk pencatatan keuangan pribadi.
+
+### Yang benar-benar perlu dijaga
+
+1. **Project di-pause setelah 7 hari tidak ada aktivitas.** Ini bukan kehilangan data — datanya tetap aman, hanya aplikasi berhenti melayani sampai kamu klik **Restore** di dashboard Supabase. Cukup buka aplikasinya minimal sekali seminggu.
+2. **Egress** bisa terasa kalau datanya sudah ribuan baris, karena aplikasi mengambil semua transaksi sekaligus saat halaman dibuka. Kalau nanti terasa lambat, tambahkan pagination di `lib/storage.ts`.
+
+### Kalau nanti benar-benar perlu pindah, ke mana?
+
+| Layanan | Jenis | Gratisnya | Cocok? |
+|---|---|---|---|
+| **Neon** | PostgreSQL | 1 GB, 100 project, ada **Better Auth** bawaan | ⭐ **paling mudah** — sama-sama Postgres |
+| **Cloudflare D1** | SQLite | 5 GB, 100rb tulis/hari | murah, tapi semua query harus ditulis ulang |
+| **Turso** | SQLite | 5 GB, 500 juta baca/bulan | sama, harus tulis ulang |
+| **Supabase self-host** | PostgreSQL | disk sendiri (Docker) | butuh server yang selalu hidup |
+
+**Rekomendasi: Neon** — karena tetap PostgreSQL, jadi skema SQL, `schema.sql`, dan RLS-mu hampir tidak berubah.
+
+### Bagaimana cara pindahnya?
+
+Karena seluruh akses database lewat **satu pintu** (`lib/storage.ts`), pindah database tidak perlu menyentuh halaman atau komponen sama sekali. Yang berubah hanya 3 berkas:
+
+| Berkas | Yang diganti |
+|---|---|
+| `lib/storage.ts` | `supabase.from('transactions')...` → query ke database baru |
+| `lib/auth.ts` | Supabase Auth → Better Auth / NextAuth |
+| `lib/supabase-server.ts` | hapus, diganti client database baru |
+
+**Langkah teknisnya:**
+
+```bash
+# 1. Cadangkan data dari Supabase (butuh pg_dump, sudah ada di Git Bash)
+pg_dump "postgresql://postgres:PASSWORD@db.xxxx.supabase.co:5432/postgres" \
+        --data-only --table=public.transactions --table=public.categories \
+        > backup.sql
+
+# 2. Buat project di Neon, ambil connection string-nya
+
+# 3. Jalankan skema + data ke Neon
+psql "postgresql://user:pass@ep-xxx.neon.tech/neondb" -f supabase/schema.sql
+psql "postgresql://user:pass@ep-xxx.neon.tech/neondb" -f backup.sql
+```
+
+> 💡 **Cadangan paling gampang tanpa terminal:** buka halaman **Riwayat**, klik **Export CSV**. Semua transaksimu (beserta nama kategori) tersimpan sebagai file yang bisa dibuka di Excel, Google Sheets, atau diimpor ulang ke database mana pun.
+
+### ⚠️ Yang perlu kamu tahu sebelum pindah
+
+**Pindah database = pindah sistem login.** Password pengguna disimpan sebagai hash di `auth.users` milik Supabase dan tidak bisa dipindahkan begitu saja ke sistem lain. Konsekuensinya: **semua pengguna harus mendaftar ulang atau reset password**.
+
+Karena itu, saran jujurnya:
+
+- **Pakai aplikasi ini dulu** dengan Supabase Free — untuk pemakaian pribadi, kuotanya tidak akan habis dalam puluhan tahun.
+- **Pindah hanya kalau** project sering ter-pause dan itu mengganggu, atau kamu ingin dipakai banyak orang sekaligus.
+- Kalau suatu hari butuh lebih, **Supabase Pro ($25/bln)** lebih murah daripada waktu yang habis untuk migrasi.
+
+---
+
 ## 🧠 Keputusan Desain (kenapa begini?)
+
+
 
 - **`amount` selalu positif, arah uang ditentukan `type`.** Lebih mudah divalidasi, dijumlahkan, dan tidak ada bug tanda minus yang tidak sengaja.
 - **Tanggal disimpan sebagai `yyyy-MM-dd`.** Aman untuk sorting dan filter, tidak terpengaruh zona waktu.

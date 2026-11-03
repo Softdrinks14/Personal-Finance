@@ -10,22 +10,25 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: [
-    { media: '(prefers-color-scheme: light)', color: '#f8fafc' },
-    { media: '(prefers-color-scheme: dark)', color: '#0b1120' },
-  ],
+  themeColor: '#0b1120',
 };
 
 /**
  * Skrip kecil yang dijalankan SEBELUM halaman dirender.
- * Tugasnya: pasang class "dark" lebih awal supaya layar tidak berkedip putih
- * saat user memilih mode gelap.
+ *
+ * Urutannya penting supaya layar tidak berkedip putih:
+ *   1. Belum pernah memilih tema  -> DARK (ini default aplikasi).
+ *   2. Pernah memilih "light"     -> class "dark" dilepas.
+ *   3. Pernah memilih "dark"      -> class "dark" dipasang.
+ *
+ * `<html className="dark">` di bawah membuat tampilan awal (sebelum JavaScript
+ * jalan) juga sudah gelap, jadi tidak ada kedipan terang sama sekali.
  */
-const themeScript = `(function(){try{var t=localStorage.getItem('pft.theme');var d=window.matchMedia('(prefers-color-scheme: dark)').matches;if(t==='dark'||(!t&&d)){document.documentElement.classList.add('dark');}}catch(e){}})();`;
+const themeScript = `(function(){try{var saved=localStorage.getItem('pft.theme');var dark=saved!=='light';document.documentElement.classList.toggle('dark',dark);}catch(e){document.documentElement.classList.add('dark');}})();`;
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="id" suppressHydrationWarning>
+    <html lang="id" className="dark" suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>

@@ -8,10 +8,14 @@ const STORAGE_KEY = 'pft.theme';
 
 /**
  * Tombol ganti mode terang / gelap.
- * Pilihan user disimpan di localStorage supaya tetap sama saat dibuka lagi.
+ *
+ * Default aplikasi = GELAP (lihat app/layout.tsx). Pilihan user disimpan di
+ * localStorage supaya tetap sama saat dibuka lagi. `useState(true)` dipakai
+ * sebagai tebakan awal karena class "dark" sudah dipasang di server; efek di
+ * bawah menyamakannya dengan keadaan sebenarnya di browser.
  */
 export function ThemeToggle() {
-  const [isDark, setIsDark] = React.useState(false);
+  const [isDark, setIsDark] = React.useState(true);
 
   React.useEffect(() => {
     setIsDark(document.documentElement.classList.contains('dark'));
