@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { isCarryOverTransaction } from '@/lib/analytics';
 import type { Category, Transaction } from '@/lib/types';
 import { formatDateID, formatIDR } from '@/lib/utils';
 
@@ -70,6 +71,9 @@ export function TransactionTable({
           {transactions.map((tx) => {
             const category = tx.category_id ? categoryById.get(tx.category_id) : undefined;
             const isIncome = tx.type === 'income';
+            // Penanda dana bawaan bulan lalu: tetap tampil, tapi tidak dijumlah
+            // ke total Pemasukan di halaman Riwayat & Laporan.
+            const isCarryOver = isCarryOverTransaction(tx);
 
             return (
               <TableRow key={tx.id}>
@@ -82,6 +86,11 @@ export function TransactionTable({
                     <span className="font-medium leading-snug">
                       {tx.note || <span className="text-muted-foreground">Tanpa keterangan</span>}
                     </span>
+                    {isCarryOver ? (
+                      <Badge tone="info" className="w-fit">
+                        Bukan pemasukan baru
+                      </Badge>
+                    ) : null}
                     <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
                       {tx.source === 'ocr' ? (
                         <>

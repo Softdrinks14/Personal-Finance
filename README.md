@@ -19,7 +19,7 @@ Dibuat untuk pemula: semua penjelasan pakai bahasa Indonesia, dan aplikasi **lan
 
 ### 2. Dashboard & Analitik Visual (`/`)
 - Tiga kartu ringkasan: **Total Pemasukan**, **Total Pengeluaran**, **Saldo Bersih** bulan ini — lengkap dengan perbandingan persen vs bulan lalu.
-- **Kartu Saldo Sisa Bulan Lalu**: menampilkan sisa uang dari bulan sebelumnya, arus bersih bulan ini, dan **total saldo akhir** yang otomatis dibawa ke bulan berikutnya. Ada tombol **"Catat sebagai pemasukan"** yang membuat satu transaksi pemasukan bertanggal 1 dengan keterangan `Saldo sisa bulan lalu (Okt 2026)` — transaksi berlabel ini tidak dihitung dua kali, dan kartu menawarkan **"Sesuaikan"** kalau transaksi bulan lalu berubah.
+- **Kartu Saldo Sisa Bulan Lalu**: menampilkan sisa uang dari bulan sebelumnya, arus bersih bulan ini, dan **total saldo akhir** yang otomatis dibawa ke bulan berikutnya. Ada tombol **"Catat sebagai pemasukan"** yang membuat satu transaksi pemasukan bertanggal 1 dengan keterangan `Saldo sisa bulan lalu (Okt 2026)` — transaksi ini dihitung di **Total Pemasukan dashboard** tetapi tidak dihitung dua kali di total saldo, dan kartu menawarkan **"Sesuaikan"** kalau transaksi bulan lalu berubah.
 - **Grafik batang**: pemasukan vs pengeluaran 6 bulan terakhir.
 - **Diagram donat**: pembagian per kategori (bisa diganti antara "Keluar" dan "Masuk").
 - Tabel **5 transaksi terakhir**.
@@ -47,7 +47,8 @@ Dibuat untuk pemula: semua penjelasan pakai bahasa Indonesia, dan aplikasi **lan
 - Tabel lengkap dengan **pencarian** (keterangan, kategori, nominal, tanggal, sumber).
 - **Filter** jenis, bulan, dan kategori — plus kartu total dari hasil filter.
 - **Edit** dan **hapus** (dengan dialog konfirmasi).
-- **Export CSV** — siap dibuka di Excel/Google Sheets (sudah pakai BOM + baris total).
+- **Export CSV** — siap dibuka di Excel/Google Sheets (sudah pakai BOM + baris total). Transaksi "Saldo sisa bulan lalu" ikut tercantum, tetapi dipisah dari Total Pemasukan agar angkanya sama dengan kartu di layar.
+- **Total Pemasukan di halaman ini sengaja tidak menjumlahkan dana "Saldo sisa bulan lalu"** (dana itu sudah tampil di dashboard). Transaksinya tetap terlihat di tabel dengan badge *Bukan pemasukan baru*.
 
 ### 6. Lain-lain
 - 🌙 **Mode gelap sebagai default** (bisa diganti ke terang lewat tombol di navbar; pilihan tersimpan di localStorage, tanpa kedipan saat reload).

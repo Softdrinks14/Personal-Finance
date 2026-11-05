@@ -11,7 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Dialog } from '@/components/ui/dialog';
 import { Input, Label, Select } from '@/components/ui/input';
 import { useToast } from '@/components/ui/toast';
-import { availableMonths } from '@/lib/analytics';
+import { availableMonths, isCarryOverTransaction } from '@/lib/analytics';
 import { csvFilename, transactionsToCsv } from '@/lib/csv';
 import type { Transaction, TransactionInput } from '@/lib/types';
 import { downloadTextFile, formatIDR, monthLabel } from '@/lib/utils';
@@ -66,10 +66,35 @@ export default function TransactionsPage() {
     });
   }, [transactions, search, typeFilter, categoryFilter, monthFilter, categoryById]);
 
+  /**
+   * Total dari daftar yang sedang tampil.
+   *
+   * Transaksi berlabel "Saldo sisa bulan lalu" DIKECUALIKAN dari total Pemasukan
+   * (dan dari Selisih). Alasannya: dana itu bukan uang baru di bulan ini —
+   * berasal dari bulan lalu dan sudah muncul di dashboard sebagai kartu
+   * "Saldo Sisa Bulan Lalu". Kalau ikut dijumlah di sini, angkanya terlihat
+   * dobel. Transaksinya sendiri TETAP tampil di tabel (dengan badge penanda)
+   * supaya catatannya tetap utuh dan bisa diedit/dihapus.
+   */
   const totals = React.useMemo(() => {
-    const income = filtered.filter((t) => t.type === 'income').reduce((acc, t) => acc + t.amount, 0);
-    const expense = filtered.filter((t) => t.type === 'expense').reduce((acc, t) => acc + t.amount, 0);
-    return { income, expense, net: income - expense };
+    const counted = filtered.filter((t) => !isCarryOverTransaction(t));
+    const carryOver = filtered.filter(isCarryOverTransaction);
+
+    const income = counted
+      .filter((t) => t.type === 'income')
+      .reduce((acc, t) => acc + t.amount, 0);
+    const expense = counted
+      .filter((t) => t.type === 'expense')
+      .reduce((acc, t) => acc + t.amount, 0);
+    const carryOverTotal = carryOver.reduce((acc, t) => acc + t.amount, 0);
+
+    return {
+      income,
+      expense,
+      net: income - expense,
+      carryOverCount: carryOver.length,
+      carryOverTotal,
+    };
   }, [filtered]);
 
   const isFiltering =
@@ -133,7 +158,15 @@ export default function TransactionsPage() {
         {/* Ringkasan hasil filter */}
         <div className="grid gap-4 sm:grid-cols-3">
           {[
-            { label: 'Pemasukan (terfilter)', value: totals.income, className: 'text-success' },
+            {
+              label: 'Pemasukan (terfilter)',
+              value: totals.income,
+              className: 'text-success',
+              hint:
+                totals.carryOverCount > 0
+                  ? `${formatIDR(totals.carryOverTotal)} saldo sisa bulan lalu tidak dihitung`
+                  : undefined,
+            },
             { label: 'Pengeluaran (terfilter)', value: totals.expense, className: 'text-destructive' },
             { label: 'Selisih', value: totals.net, className: 'text-foreground' },
           ].map((item) => (
@@ -143,6 +176,9 @@ export default function TransactionsPage() {
                 <p className={`tabular mt-1 text-xl font-semibold ${item.className}`}>
                   {formatIDR(item.value)}
                 </p>
+                {item.hint ? (
+                  <p className="mt-1 text-xs text-muted-foreground">{item.hint}</p>
+                ) : null}
               </CardContent>
             </Card>
           ))}

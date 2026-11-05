@@ -253,11 +253,13 @@ export function CarryOverCard({ period, periodLabel, summary }: CarryOverCardPro
           <StatBox label="Total saldo akhir" value={summary.endBalance} hint="Siap dibawa ke bulan depan" highlight />
         </div>
 
-        <p className="flex items-start gap-1.5 text-[11px] leading-relaxed text-muted-foreground">
+        <div className="flex items-start gap-1.5 text-[11px] leading-relaxed text-muted-foreground">
           <CheckCircle2 className="mt-0.5 h-3 w-3 shrink-0" />
-          Transaksi berlabel &quot;Saldo sisa bulan lalu&quot; tidak dihitung dua kali, jadi total saldo
-          tetap akurat walau kamu mencatatnya sebagai pemasukan.
-        </p>
+          <p>
+            Transaksi berlabel &quot;Saldo sisa bulan lalu&quot; dihitung sebagai pemasukan di dashboard,
+            tapi tidak ikut dijumlah dua kali di total saldo.
+          </p>
+        </div>
       </CardContent>
     </Card>
   );
